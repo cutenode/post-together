@@ -1,0 +1,43 @@
+# Tangled Spindle CI for post-together itself: typecheck, test, build, and run
+# the two dry-run smoke checks. This is the same job as .github/workflows/ci.yml
+# expressed as a Spindle workflow (nixery engine, Node 24 from nixpkgs).
+when:
+  - event: ["push", "pull_request"]
+    branch: ["main"]
+
+engine: nixery
+
+clone:
+  submodules: false
+  tags: false
+
+dependencies:
+  nixpkgs:
+    - nodejs_24
+
+environment:
+  NO_COLOR: "1"
+  CI: "true"
+
+steps:
+  - name: install
+    command: |
+      set -euo pipefail
+      npm ci --no-audit --no-fund
+
+  - name: typecheck and test
+    command: |
+      set -euo pipefail
+      npm run typecheck
+      npm test
+
+  - name: build
+    command: |
+      set -euo pipefail
+      npm run build
+
+  - name: smoke (cli and action entrypoints, dry-run)
+    command: |
+      set -euo pipefail
+      node dist/cli.js --dry-run --dir examples/posts
+      env INPUT_DRY-RUN=true INPUT_DIR=examples/posts GITHUB_OUTPUT="$(mktemp)" GITHUB_STEP_SUMMARY="$(mktemp)" node dist/action.js

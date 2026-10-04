@@ -1,0 +1,37 @@
+# Tangled Spindle workflow (microvm engine): the same job as post.yml, run in a
+# NixOS microVM instead of a nixery container. Copy whichever engine you prefer
+# into your repository's .tangled/workflows/ directory; keep only one of the two,
+# otherwise both run in parallel on every push.
+#
+# Secrets: add BSKY_IDENTIFIER and BSKY_APP_PASSWORD under the repository's
+# Settings -> Pipelines -> Secrets. They are injected into every step as
+# environment variables and masked as *** in logs. See post.yml for details.
+#
+# State: `--state-file none`, because the checkout is a detached HEAD with no push
+# credentials. See post.yml.
+# `paths` limits push runs to changes under posts/ (manual runs ignore it).
+when:
+  - event: ["push", "manual"]
+    branch: ["main"]
+    paths: ["posts/**"]
+
+engine: microvm
+image: nixos
+
+clone:
+  submodules: false
+  tags: false
+
+# microvm `dependencies` is a flat list (bare names are nixpkgs attributes),
+# unlike the nixery engine's registry map.
+dependencies:
+  - nodejs_24
+
+environment:
+  NO_COLOR: "1"
+
+steps:
+  - name: post to bluesky
+    command: |
+      set -euo pipefail
+      npx --yes @cutenode/post-together@1 --dir posts --state-file none

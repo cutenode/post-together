@@ -1,0 +1,66 @@
+# dist/action.js is the committed esbuild bundle that `uses: cutenode/post-together@v1`
+# runs directly (GitHub downloads the repository at the ref and runs `node dist/action.js`;
+# nothing is installed at runtime). This workflow rebuilds it from src/ and fails when
+# the committed file is out of date. Adapted from actions/typescript-action's
+# check-dist.yml; see docs/research/github-action.md section 4.
+name: Check dist/action.js
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check-dist:
+    name: Check dist/action.js
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        id: setup-node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Remove the committed bundle
+        id: remove-dist
+        run: rm -f dist/action.js
+
+      - name: Install dependencies
+        id: install
+        run: npm ci
+
+      - name: Rebuild dist/action.js
+        id: build
+        run: npm run build:action
+
+      - name: Compare with the committed bundle
+        id: diff
+        run: |
+          if [ ! -f dist/action.js ]; then
+            echo "Expected dist/action.js does not exist. See status below:"
+            ls -la ./ dist/
+            exit 1
+          fi
+          if [ "$(git diff --ignore-space-at-eol --text -- dist/action.js | wc -l)" -gt "0" ]; then
+            echo "Detected uncommitted changes after build. Run 'npm run build' and commit dist/action.js. See status below:"
+            git diff --ignore-space-at-eol --text --stat -- dist/action.js
+            exit 1
+          fi
+
+      - if: ${{ failure() && steps.diff.outcome == 'failure' }}
+        name: Upload the rebuilt bundle
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/action.js

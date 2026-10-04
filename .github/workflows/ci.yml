@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Typecheck and test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+  build:
+    name: Build and smoke-test the CLI and action bundles
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Smoke test the CLI (dry run over examples/posts)
+        run: node dist/cli.js --dry-run --dir examples/posts
+
+      # The runner does nothing more than `node <main>` with INPUT_* in the
+      # environment, so the bundle can be exercised without a workflow step.
+      # `env` is required: INPUT_DRY-RUN is not a valid shell variable name, so a
+      # bare `INPUT_DRY-RUN=true node ...` prefix is rejected by bash.
+      - name: Smoke test the action bundle (dry run over examples/posts)
+        run: env INPUT_DRY-RUN=true INPUT_DIR=examples/posts GITHUB_OUTPUT=$(mktemp) GITHUB_STEP_SUMMARY=$(mktemp) node dist/action.js
+
+  test-action:
+    name: Run the local action (dry run)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run post-together from this checkout
+        id: post
+        uses: ./
+        with:
+          dry-run: true
+          dir: examples/posts
+
+      - name: Print outputs
+        run: |
+          echo "posted-count=${{ steps.post.outputs.posted-count }}"
+          echo "skipped-count=${{ steps.post.outputs.skipped-count }}"

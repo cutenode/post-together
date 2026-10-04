@@ -1,0 +1,67 @@
+name: post-together
+description: Post Markdown files from a directory to Bluesky as posts and threads.
+author: Tierney Cyren
+
+branding:
+  icon: send
+  color: blue
+
+inputs:
+  dir:
+    description: Directory scanned recursively for *.md files.
+    required: false
+    default: posts
+  state-file:
+    description: State file path relative to the workspace, or "none" to disable it. Defaults to <dir>/.post-together.json.
+    required: false
+    default: ''
+  identifier:
+    description: Bluesky handle, email or DID. Required unless dry-run is true.
+    required: false
+  app-password:
+    description: Bluesky app password (never the account password). Required unless dry-run is true.
+    required: false
+  service:
+    description: PDS or entryway URL.
+    required: false
+    default: https://bsky.social
+  dry-run:
+    description: Render and print the posts without logging in, sending anything or writing state.
+    required: false
+    default: 'false'
+  limit:
+    description: Maximum number of files to post in this run (0 = unlimited).
+    required: false
+    default: '0'
+  link-cards:
+    description: Attach an external link card for the first link in a post that has no images.
+    required: false
+    default: 'true'
+  thread-counter:
+    description: Append " (i/n)" to each post of a thread with more than one post.
+    required: false
+    default: 'false'
+  commit:
+    description: After posting, git add, commit and push the state file (needs permissions contents write).
+    required: false
+    default: 'false'
+  commit-message:
+    description: Commit message used with commit.
+    required: false
+    default: 'chore: record posted files'
+  mode:
+    description: post (default) publishes unposted files; init marks every current file as posted without posting.
+    required: false
+    default: post
+
+outputs:
+  posted-count:
+    description: Number of files posted (or resumed) in this run.
+  posted:
+    description: JSON array of { file, uris } for every file posted in this run.
+  skipped-count:
+    description: Number of files skipped (draft, already posted, changed, or limit).
+
+runs:
+  using: node24
+  main: dist/action.js

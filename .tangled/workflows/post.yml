@@ -1,0 +1,47 @@
+# Tangled Spindle workflow (nixery engine): post Markdown files from ./posts to
+# Bluesky on every push to main, and when triggered manually from the Tangled UI.
+# Copy this file into your repository as .tangled/workflows/post.yml. The microvm
+# variant is in post-microvm.yml next to this file.
+#
+# Secrets: Spindle has no `uses:`; a step is a shell command with secrets injected
+# as environment variables. Add these two under the repository's
+# Settings -> Pipelines -> Secrets (keys must match ^[a-zA-Z_][a-zA-Z0-9_]*$,
+# values are at most 200 characters, and are masked as *** in logs):
+#   BSKY_IDENTIFIER   your handle, email or DID
+#   BSKY_APP_PASSWORD an app password created in the Bluesky app
+# post-together reads both from the environment. Do not put them under
+# `environment:` below; that block is visible to anyone who can see the repository.
+#
+# State: the Spindle checkout is a detached HEAD with no push credentials, so the
+# state file cannot be committed back. `--state-file none` disables it;
+# post-together then relies on deterministic record keys and a lookup on the PDS
+# to make sure a file is never posted twice.
+# `paths` limits push runs to changes under posts/ (manual runs ignore it).
+when:
+  - event: ["push", "manual"]
+    branch: ["main"]
+    paths: ["posts/**"]
+
+engine: nixery
+
+# Omitted clone options compile to true; both are set explicitly so the fetch is
+# a plain shallow clone.
+clone:
+  submodules: false
+  tags: false
+
+# nixery `dependencies` is a map of registry -> packages. nodejs_24 provides
+# node, npm and npx.
+dependencies:
+  nixpkgs:
+    - nodejs_24
+
+# Tangled's UI renders ANSI colour codes as raw text.
+environment:
+  NO_COLOR: "1"
+
+steps:
+  - name: post to bluesky
+    command: |
+      set -euo pipefail
+      npx --yes @cutenode/post-together@1 --dir posts --state-file none

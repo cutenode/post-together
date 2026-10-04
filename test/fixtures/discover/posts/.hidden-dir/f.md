@@ -1,0 +1,1 @@
+Inside .hidden-dir, ignored.

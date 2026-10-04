@@ -1,0 +1,6 @@
+node_modules/
+coverage/
+dist/*
+!dist/action.js
+*.tsbuildinfo
+.DS_Store

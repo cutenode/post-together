@@ -1,0 +1,1 @@
+Inside _drafts, ignored.

@@ -1,0 +1,52 @@
+# EXAMPLE consumer workflow. This is the file to copy into your own repository as
+# .github/workflows/post.yml. It is committed here only as documentation: in this
+# repository there is no posts/ directory, so the paths filter never matches.
+#
+# What it does: on every push to main that touches posts/**, post any Markdown file
+# under posts/ that has not been posted yet, then commit the updated
+# posts/.post-together.json back to main.
+#
+# Before it can run, in your repository settings:
+#   - Variables: BSKY_IDENTIFIER = your handle, email or DID (for example you.bsky.social)
+#   - Secrets:   BSKY_APP_PASSWORD = an app password created in the Bluesky app
+#                (never your account password)
+name: Post to Bluesky
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "posts/**"
+
+# Serialize runs. Two pushes in quick succession would otherwise post in parallel
+# and race each other to commit the state file. Do not cancel an in-progress run:
+# it may be half-way through posting a thread.
+concurrency:
+  group: post-together
+  cancel-in-progress: false
+
+# `commit: true` below pushes posts/.post-together.json back to main with the
+# workflow's GITHUB_TOKEN, which needs write access to repository contents. Pushes
+# made with GITHUB_TOKEN do not trigger workflows, so this cannot loop.
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      # persist-credentials defaults to true, which is what lets the action push.
+      - uses: actions/checkout@v6
+
+      - uses: cutenode/post-together@v1
+        id: post
+        with:
+          identifier: ${{ vars.BSKY_IDENTIFIER }}
+          app-password: ${{ secrets.BSKY_APP_PASSWORD }}
+          dir: posts
+          commit: true
+
+      # Optional: the action also writes a table of posted files, with links, to the
+      # job summary. The outputs are available to later steps.
+      - run: |
+          echo "posted ${{ steps.post.outputs.posted-count }} file(s), skipped ${{ steps.post.outputs.skipped-count }}"

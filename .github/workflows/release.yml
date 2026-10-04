@@ -1,0 +1,80 @@
+# Publishes the npm package when an exact version tag (v1.2.3, v1.2.3-rc.1) is pushed.
+# The moving major tag (v1) does not match the filter, so force-pushing it never publishes.
+#
+# Authentication is npm trusted publishing: npm exchanges this job's GitHub OIDC token
+# for a short-lived publish credential, so there is no NPM_TOKEN secret, and provenance
+# is attached automatically. The trusted publisher on npmjs.com (package Settings →
+# Trusted publishing) must name cutenode/post-together, this file (release.yml) and the
+# `npm` environment. Needs npm >= 11.5.1 and Node >= 22.14.0; the Node 24 pinned in
+# .node-version ships a newer npm.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          registry-url: https://registry.npmjs.org
+          # No dependency cache in a publishing job: a poisoned cache entry would ship.
+          package-manager-cache: false
+
+      - name: Check the tag matches package.json
+        id: version
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+          # Prereleases go to the `next` dist-tag so a plain `npm i @cutenode/post-together` never gets one.
+          case "$version" in
+            *-*) echo "dist-tag=next" >> "$GITHUB_OUTPUT" ;;
+            *) echo "dist-tag=latest" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # The same tag is what `uses: cutenode/post-together@v1.2.3` runs, so refuse to
+      # release when the committed action bundle does not match the source.
+      - name: Check dist/action.js is up to date
+        run: git diff --exit-code -- dist/action.js
+
+      - name: Publish
+        run: npm publish --tag "$DIST_TAG"
+        env:
+          DIST_TAG: ${{ steps.version.outputs.dist-tag }}
