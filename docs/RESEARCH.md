@@ -1,7 +1,7 @@
 # post-together: research digest
 
-Verified 2026-09-28. Each decision below links to the full report with citations in `docs/research/`.
-Implementers: read this file and `SPEC.md`; open a full report only when you need the exact quote.
+Verified 2026-09-28. The full reports, with citations, are in `docs/research/`.
+Implementers: read this file and `SPEC.md`, and open a full report only when you need the exact quote.
 
 ## Decisions and the facts behind them
 
@@ -24,7 +24,7 @@ Implementers: read this file and `SPEC.md`; open a full report only when you nee
 | `XRPCError` fields for error handling | `status`, `error` (e.g. `RateLimitExceeded`, `AuthenticationRequired`, `InvalidRequest`, `RecordNotFound`), `headers['retry-after']` | bluesky-api §11 |
 | GitHub Action runtime `node24` | Node 20 removed from GitHub runners on 2026-09-23; docs list only `node20` and `node24` | github-action §1, §10 |
 | `main: dist/action.js` as ESM with `"type": "module"` | The runner spawns `node <main>`; Node's normal module rules apply; the official template does exactly this | github-action §4 |
-| Bundle with esbuild + `createRequire` banner | Verified in this session: without the banner the ESM bundle throws `Dynamic require of "..." is not supported` | github-action §4 |
+| Bundle with esbuild + `createRequire` banner | Verified locally: without the banner the ESM bundle throws `Dynamic require of "..." is not supported` | github-action §4 |
 | Commit `dist/action.js`, verify with `check-dist` | GitHub downloads the action repo and runs it as-is; no `npm install` at runtime | github-action §4 |
 | Inputs arrive as `INPUT_<NAME>` with hyphens kept | Docs example: `INPUT_NUM-OCTOCATS`; `core.getInput` is `process.env['INPUT_' + name.replace(/ /g,'_').toUpperCase()]` | github-action §1, §2 |
 | Commit-back on GitHub needs `contents: write`, bot identity, push events | Fork PRs get read-only tokens; PR checkouts are detached; `GITHUB_TOKEN` pushes do not retrigger workflows | github-action §8 |
@@ -49,7 +49,7 @@ Implementers: read this file and `SPEC.md`; open a full report only when you nee
 | Outputs | `GITHUB_OUTPUT`, `GITHUB_STEP_SUMMARY` files | none |
 | Push token | `GITHUB_TOKEN` (explicitly passed) | none |
 
-## Verified in this session (not from web sources)
+## Verified locally (not from web sources)
 
 - `@atproto/api` 0.21.0 exports `Agent`, `CredentialSession`, `AtpAgent`, `RichText`, `XRPCError`, `AppBskyFeedPost`, `AppBskyEmbedImages`, `AppBskyEmbedExternal`, `AppBskyRichtextFacet`; `Agent.post()` returns `{ uri, cid }`; `agent.uploadBlob` and `agent.resolveHandle` exist; `uploadBlob` input is `string | Uint8Array | Blob` with `{ encoding }`.
 - `@atproto/common-web` 0.5.12 exports `TID` with `nextStr()`, `fromTime(timestamp, clockid)`, `fromStr()`, `toString()`.

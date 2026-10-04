@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { decodeEntities, fetchLinkCard, parseOpenGraph, USER_AGENT } from '../src/linkcard.js'
+import { decodeEntities, fetchLinkCard, HTML_MAX_BYTES, parseOpenGraph, readCapped, USER_AGENT } from '../src/linkcard.js'
 
 let server: Server
 let base = ''
@@ -39,6 +39,23 @@ beforeAll(async () => {
         const big = Buffer.alloc(1_000_001, 1)
         res.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': String(big.length) })
         return res.end(big)
+      }
+      case '/huge-page': {
+        // Tags first, then far more than HTML_MAX_BYTES of body, streamed without a length.
+        res.writeHead(200, { 'content-type': 'text/html' })
+        res.write('<html><head><meta property="og:title" content="Huge"></head><body>')
+        const filler = 'x'.repeat(64 * 1024)
+        for (let i = 0; i < 64; i++) res.write(filler)
+        return res.end('</body></html>')
+      }
+      case '/chunked-big':
+        return html('<html><head><meta property="og:title" content="CB"><meta property="og:image" content="/img/chunked-big.jpg"></head></html>')
+      case '/img/chunked-big.jpg': {
+        // No content-length: the size is only known by reading the body.
+        res.writeHead(200, { 'content-type': 'image/jpeg' })
+        const chunk = Buffer.alloc(100_000, 1)
+        for (let i = 0; i < 11; i++) res.write(chunk)
+        return res.end()
       }
       case '/not-image':
         return html('<html><head><meta property="og:title" content="NI"><meta property="og:image" content="/full"></head></html>')
@@ -124,6 +141,17 @@ describe('fetchLinkCard', () => {
     expect(card.thumb).toBeUndefined()
   })
 
+  it('drops a thumbnail over the limit even without a content-length header', async () => {
+    const card = await fetchLinkCard(`${base}/chunked-big`)
+    expect(card.title).toBe('CB')
+    expect(card.thumb).toBeUndefined()
+  })
+
+  it('reads only the head of a huge page', async () => {
+    const card = await fetchLinkCard(`${base}/huge-page`)
+    expect(card.title).toBe('Huge')
+  })
+
   it('drops a thumbnail whose content-type is not image/*', async () => {
     const card = await fetchLinkCard(`${base}/not-image`)
     expect(card.title).toBe('NI')
@@ -147,5 +175,15 @@ describe('fetchLinkCard', () => {
 
   it('rejects non-http schemes', async () => {
     await expect(fetchLinkCard('ftp://example.com/x')).rejects.toThrow(/scheme/)
+  })
+})
+
+describe('readCapped', () => {
+  it('returns the whole body when it fits and stops at the cap otherwise', async () => {
+    expect(await readCapped(new Response('hello'), 10)).toEqual({ bytes: new TextEncoder().encode('hello'), truncated: false })
+    const capped = await readCapped(new Response('x'.repeat(HTML_MAX_BYTES + 5)), HTML_MAX_BYTES)
+    expect(capped.truncated).toBe(true)
+    expect(capped.bytes.byteLength).toBe(HTML_MAX_BYTES)
+    expect(await readCapped(new Response(null), 10)).toEqual({ bytes: new Uint8Array(0), truncated: false })
   })
 })

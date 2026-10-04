@@ -10,6 +10,7 @@ import path from 'node:path'
 import { parseArgs } from 'node:util'
 import { BlueskyError } from './bluesky.js'
 import { type RawFlags, resolveOptions, toRunOptions, UsageError } from './config.js'
+import { keyRoot } from './discover.js'
 import { run } from './index.js'
 import { consoleLogger } from './log.js'
 import { parseFile } from './parse.js'
@@ -28,15 +29,19 @@ Options:
   --dir <path>          directory scanned recursively for *.md (default: posts)
   --state-file <path>   state file, or "none" to disable (default: <dir>/.post-together.json)
   --identifier <id>     Bluesky handle, email or DID (env BSKY_IDENTIFIER)
-  --password <pw>       Bluesky app password (env BSKY_APP_PASSWORD)
+  --password <pw>       Bluesky app password (env BSKY_APP_PASSWORD; prefer the env
+                        var, because a flag is visible in the process list and
+                        shell history)
   --service <url>       PDS or entryway URL (default: https://bsky.social)
   --dry-run             render and print; no login, no network, no state writes
+                        (with init: list the files it would mark)
   --limit <n>           max files to post this run (default: 0 = unlimited)
   --no-link-cards       do not attach link cards
   --thread-counter      append " (i/n)" to each post of a thread
   --commit              git add, commit and push the state file after posting
   --commit-message <m>  commit message (default: "chore: record posted files")
-  --cwd <path>          root for relative paths and state keys (default: current directory)
+  --cwd <path>          base for relative paths (default: current directory); state
+                        and record keys are relative to the enclosing git repository
   -h, --help            show this help
   -v, --version         print the version
 
@@ -118,7 +123,7 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === 'render') {
     const file = path.resolve(opts.cwd, rest[0] ?? '')
-    const parsedFile = await parseFile(file, opts.cwd)
+    const parsedFile = await parseFile(file, opts.cwd, await keyRoot(path.dirname(file), opts.cwd))
     const out = render(parsedFile, { threadCounter: opts.threadCounter, linkCards: opts.linkCards })
     console.log(JSON.stringify({ file: out.file.relPath, frontmatter: out.file.frontmatter, posts: out.posts }, null, 2))
     return 0

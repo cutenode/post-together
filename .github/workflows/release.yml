@@ -5,8 +5,10 @@
 # for a short-lived publish credential, so there is no NPM_TOKEN secret, and provenance
 # is attached automatically. The trusted publisher on npmjs.com (package Settings →
 # Trusted publishing) must name cutenode/post-together, this file (release.yml) and the
-# `npm` environment. Needs npm >= 11.5.1 and Node >= 22.14.0; the Node 24 pinned in
-# .node-version ships a newer npm.
+# `npm` environment, with `npm publish` allowed. Needs npm >= 11.5.1 and Node >= 22.14.0;
+# the Node 24 pinned in .node-version ships a newer npm. npm only offers trusted publishing
+# for a package that already exists, so the first version is published by hand (see the
+# README's Development section).
 name: Release
 
 on:

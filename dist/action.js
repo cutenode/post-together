@@ -32308,7 +32308,11 @@ function asCid(value, options) {
     return value;
   throw new Error(`Invalid ${options?.flavor ? `${options.flavor} CID` : "CID"} "${value}"`);
 }
+var MAX_CID_STRING_LENGTH = 128;
 function parseCid(input2, options) {
+  if (input2.length > MAX_CID_STRING_LENGTH) {
+    throw new Error(`CID string too long (${input2.length} > ${MAX_CID_STRING_LENGTH})`);
+  }
   const cid2 = CID.parse(input2);
   return asCid(cid2, options);
 }
@@ -33524,6 +33528,13 @@ var didDocument = external_exports.object({
 });
 
 // node_modules/@atproto/lexicon/dist/util.js
+var MAX_CID_STRING_LENGTH2 = 128;
+function parseCidString(input2) {
+  if (input2.length > MAX_CID_STRING_LENGTH2) {
+    throw new Error(`CID string too long (${input2.length} > ${MAX_CID_STRING_LENGTH2})`);
+  }
+  return CID.parse(input2);
+}
 function toLexUri(str, baseUri) {
   if (str.split("#").length > 2) {
     throw new Error("Uri can only have one hash segment");
@@ -33916,7 +33927,7 @@ var BlobRef = class _BlobRef {
     if (check_exports.is(json, typedJsonBlobRef)) {
       return new _BlobRef(json.ref, json.mimeType, json.size);
     } else {
-      return new _BlobRef(CID.parse(json.cid), json.mimeType, -1, json);
+      return new _BlobRef(parseCidString(json.cid), json.mimeType, -1, json);
     }
   }
   ipld() {
@@ -33963,7 +33974,7 @@ function createValidator(assertionFn, errorMessage) {
 }
 function isCidString(v) {
   try {
-    CID.parse(v);
+    parseCidString(v);
     return true;
   } catch {
     return false;
@@ -38185,6 +38196,14 @@ var schemaDict = {
             type: "ref",
             ref: "lex:app.bsky.feed.defs#replyRef"
           },
+          opThreadPostIndex: {
+            type: "integer",
+            description: "The 1-indexed position of this post within the contiguous OP thread. Only present when this post is part of the OP thread."
+          },
+          opThreadPostCount: {
+            type: "integer",
+            description: "The total number of posts in the contiguous OP thread that this post belongs to. Only present when this post is part of the OP thread."
+          },
           reason: {
             type: "union",
             refs: [
@@ -39159,6 +39178,10 @@ var schemaDict = {
             },
             cursor: {
               type: "string"
+            },
+            since: {
+              type: "string",
+              description: "Return only items newer than the position identified by this cursor value, newest first. Use the startCursor from a previous response. The item at that position is not returned because the caller already holds it. When the bounded range is exhausted, the returned cursor equals this value so that pagination continues below the boundary."
             }
           }
         },
@@ -39170,6 +39193,10 @@ var schemaDict = {
             properties: {
               cursor: {
                 type: "string"
+              },
+              startCursor: {
+                type: "string",
+                description: "Cursor identifying the newest item in this page. Pass it as since on a later request to fetch only newer content."
               },
               feed: {
                 type: "array",
@@ -39320,6 +39347,11 @@ var schemaDict = {
             },
             cursor: {
               type: "string"
+            },
+            sort: {
+              type: "string",
+              knownValues: ["latest", "top"],
+              description: "Ordering of results. 'latest' (default when unset) is newest first; 'top' orders quotes by their like count."
             }
           }
         },
@@ -39480,6 +39512,10 @@ var schemaDict = {
             },
             cursor: {
               type: "string"
+            },
+            since: {
+              type: "string",
+              description: "Return only items newer than the position identified by this cursor value, newest first. Use the startCursor from a previous response. The item at that position is not returned because the caller already holds it. When the bounded range is exhausted, the returned cursor equals this value so that pagination continues below the boundary."
             }
           }
         },
@@ -39491,6 +39527,10 @@ var schemaDict = {
             properties: {
               cursor: {
                 type: "string"
+              },
+              startCursor: {
+                type: "string",
+                description: "Cursor identifying the newest item in this page. Pass it as since on a later request to fetch only newer content."
               },
               feed: {
                 type: "array",
@@ -42277,6 +42317,484 @@ var schemaDict = {
           activitySubscription: {
             type: "ref",
             ref: "lex:app.bsky.notification.defs#activitySubscription"
+          }
+        }
+      }
+    }
+  },
+  AppBskyNotificationGetGroupedNotifications: {
+    lexicon: 1,
+    id: "app.bsky.notification.getGroupedNotifications",
+    defs: {
+      main: {
+        type: "query",
+        description: "[UNSTABLE - DO NOT USE THIS ENDPOINT WHILE THIS NOTE IS HERE] Enumerate notifications for the requesting account, pre-grouped for rendering. Supersedes listNotifications. Requires auth.",
+        parameters: {
+          type: "params",
+          properties: {
+            feed: {
+              type: "string",
+              description: "Which notification feed to return. Grouping behavior varies by feed: notifications about follows might be grouped in 'all' and ungrouped (or rather, in single-item groups) in 'followers'.",
+              maxLength: 32,
+              knownValues: [
+                "all",
+                "people-i-follow",
+                "conversations",
+                "followers",
+                "activity"
+              ],
+              default: "all"
+            },
+            limit: {
+              type: "integer",
+              description: "Maximum number of groups to return.",
+              minimum: 1,
+              maximum: 50,
+              default: 30
+            },
+            cursor: {
+              type: "string",
+              maxLength: 1024
+            }
+          }
+        },
+        output: {
+          encoding: "application/json",
+          schema: {
+            type: "object",
+            required: ["groups"],
+            properties: {
+              cursor: {
+                type: "string",
+                maxLength: 1024
+              },
+              groups: {
+                type: "array",
+                description: "Notification groups or individual notifications, newest first. Clients should ignore kinds they do not recognize. Grouping behavior depends on the kind and selected feed.",
+                items: {
+                  type: "ref",
+                  ref: "lex:app.bsky.notification.getGroupedNotifications#group"
+                }
+              },
+              seenAt: {
+                type: "string",
+                format: "datetime"
+              },
+              relatedViews: {
+                type: "array",
+                description: "Reusable views referenced by notifications. Views shared across notifications appear once to avoid duplication. Each group contributes only its first 10 of each related view to this array. Ex: for a group containing likes in a post, we might have a large number of likeItem (e.g., 50) in a group, but only the profile views for the newest 10 items will be included here.",
+                items: {
+                  type: "union",
+                  refs: [
+                    "lex:app.bsky.actor.defs#profileViewDetailed",
+                    "lex:app.bsky.feed.defs#blockedPost",
+                    "lex:app.bsky.feed.defs#generatorView",
+                    "lex:app.bsky.feed.defs#notFoundPost",
+                    "lex:app.bsky.feed.defs#postView",
+                    "lex:app.bsky.graph.defs#starterPackView"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      group: {
+        type: "object",
+        description: "Contains common metadata and kind-specific data for a notification group or individual notification.",
+        required: ["id", "isRead", "indexedAt", "count", "kind"],
+        properties: {
+          id: {
+            type: "string",
+            maxLength: 256
+          },
+          isRead: {
+            type: "boolean"
+          },
+          indexedAt: {
+            type: "string",
+            format: "datetime"
+          },
+          count: {
+            type: "integer",
+            minimum: 1
+          },
+          kind: {
+            type: "union",
+            refs: [
+              "lex:app.bsky.notification.getGroupedNotifications#likeGroup",
+              "lex:app.bsky.notification.getGroupedNotifications#multiPostLikeGroup",
+              "lex:app.bsky.notification.getGroupedNotifications#repostGroup",
+              "lex:app.bsky.notification.getGroupedNotifications#likeViaRepostGroup",
+              "lex:app.bsky.notification.getGroupedNotifications#repostViaRepostGroup",
+              "lex:app.bsky.notification.getGroupedNotifications#followGroup",
+              "lex:app.bsky.notification.getGroupedNotifications#subscribedPostGroup",
+              "lex:app.bsky.notification.getGroupedNotifications#generatorLikeGroup",
+              "lex:app.bsky.notification.getGroupedNotifications#replyNotification",
+              "lex:app.bsky.notification.getGroupedNotifications#quoteNotification",
+              "lex:app.bsky.notification.getGroupedNotifications#mentionNotification",
+              "lex:app.bsky.notification.getGroupedNotifications#followBackNotification",
+              "lex:app.bsky.notification.getGroupedNotifications#verifiedNotification",
+              "lex:app.bsky.notification.getGroupedNotifications#unverifiedNotification",
+              "lex:app.bsky.notification.getGroupedNotifications#starterPackJoinedNotification",
+              "lex:app.bsky.notification.getGroupedNotifications#contactMatchNotification"
+            ]
+          }
+        }
+      },
+      likeGroup: {
+        type: "object",
+        description: "Group of likes by different actors on the same post.",
+        required: ["post", "items"],
+        properties: {
+          post: {
+            type: "string",
+            format: "at-uri"
+          },
+          items: {
+            type: "array",
+            minLength: 1,
+            items: {
+              type: "ref",
+              ref: "lex:app.bsky.notification.getGroupedNotifications#likeItem"
+            }
+          }
+        }
+      },
+      likeItem: {
+        type: "object",
+        description: "One actor who liked the group's post.",
+        required: ["actor"],
+        properties: {
+          actor: {
+            type: "string",
+            format: "did"
+          }
+        }
+      },
+      multiPostLikeGroup: {
+        type: "object",
+        description: "Group of likes by the same actor on different posts.",
+        required: ["actor", "items"],
+        properties: {
+          actor: {
+            type: "string",
+            format: "did"
+          },
+          items: {
+            type: "array",
+            minLength: 2,
+            items: {
+              type: "ref",
+              ref: "lex:app.bsky.notification.getGroupedNotifications#multiPostLikeItem"
+            }
+          }
+        }
+      },
+      multiPostLikeItem: {
+        type: "object",
+        description: "One post which was liked by the group's actor.",
+        required: ["post"],
+        properties: {
+          post: {
+            type: "string",
+            format: "at-uri"
+          }
+        }
+      },
+      repostGroup: {
+        type: "object",
+        description: "Group of reposts by different actors of the same post.",
+        required: ["post", "items"],
+        properties: {
+          post: {
+            type: "string",
+            format: "at-uri"
+          },
+          items: {
+            type: "array",
+            minLength: 1,
+            items: {
+              type: "ref",
+              ref: "lex:app.bsky.notification.getGroupedNotifications#repostItem"
+            }
+          }
+        }
+      },
+      repostItem: {
+        type: "object",
+        description: "One actor who reposted the group's post.",
+        required: ["actor"],
+        properties: {
+          actor: {
+            type: "string",
+            format: "did"
+          }
+        }
+      },
+      likeViaRepostGroup: {
+        type: "object",
+        description: "Group of likes by different actors on the same post via the requesting account's repost.",
+        required: ["post", "viaRepost", "items"],
+        properties: {
+          post: {
+            type: "string",
+            format: "at-uri"
+          },
+          viaRepost: {
+            type: "string",
+            format: "at-uri"
+          },
+          items: {
+            type: "array",
+            minLength: 1,
+            items: {
+              type: "ref",
+              ref: "lex:app.bsky.notification.getGroupedNotifications#likeViaRepostItem"
+            }
+          }
+        }
+      },
+      likeViaRepostItem: {
+        type: "object",
+        description: "One actor who liked the group's post via the requesting account's repost.",
+        required: ["actor"],
+        properties: {
+          actor: {
+            type: "string",
+            format: "did"
+          }
+        }
+      },
+      repostViaRepostGroup: {
+        type: "object",
+        description: "Group of reposts by different actors of the same post via the requesting account's repost.",
+        required: ["post", "viaRepost", "items"],
+        properties: {
+          post: {
+            type: "string",
+            format: "at-uri"
+          },
+          viaRepost: {
+            type: "string",
+            format: "at-uri"
+          },
+          items: {
+            type: "array",
+            minLength: 1,
+            items: {
+              type: "ref",
+              ref: "lex:app.bsky.notification.getGroupedNotifications#repostViaRepostItem"
+            }
+          }
+        }
+      },
+      repostViaRepostItem: {
+        type: "object",
+        description: "One actor who reposted the group's post via the requesting account's repost.",
+        required: ["actor"],
+        properties: {
+          actor: {
+            type: "string",
+            format: "did"
+          }
+        }
+      },
+      followGroup: {
+        type: "object",
+        description: "Group of actors who followed the requesting account.",
+        required: ["items"],
+        properties: {
+          items: {
+            type: "array",
+            minLength: 1,
+            items: {
+              type: "ref",
+              ref: "lex:app.bsky.notification.getGroupedNotifications#followItem"
+            }
+          }
+        }
+      },
+      followItem: {
+        type: "object",
+        description: "An actor who followed the requesting account, possibly via a starter pack.",
+        required: ["actor"],
+        properties: {
+          actor: {
+            type: "string",
+            format: "did"
+          },
+          starterPack: {
+            type: "string",
+            format: "at-uri"
+          }
+        }
+      },
+      subscribedPostGroup: {
+        type: "object",
+        description: "Group of new posts by actors the requesting account subscribes to.",
+        required: ["items"],
+        properties: {
+          items: {
+            type: "array",
+            minLength: 1,
+            items: {
+              type: "ref",
+              ref: "lex:app.bsky.notification.getGroupedNotifications#subscribedPostItem"
+            }
+          }
+        }
+      },
+      subscribedPostItem: {
+        type: "object",
+        description: "One new post by an actor the requesting account subscribes to.",
+        required: ["actor", "post"],
+        properties: {
+          actor: {
+            type: "string",
+            format: "did"
+          },
+          post: {
+            type: "string",
+            format: "at-uri"
+          }
+        }
+      },
+      generatorLikeGroup: {
+        type: "object",
+        description: "Group of likes by different actors on the same feed generator.",
+        required: ["generator", "items"],
+        properties: {
+          generator: {
+            type: "string",
+            format: "at-uri"
+          },
+          items: {
+            type: "array",
+            minLength: 1,
+            items: {
+              type: "ref",
+              ref: "lex:app.bsky.notification.getGroupedNotifications#generatorLikeItem"
+            }
+          }
+        }
+      },
+      generatorLikeItem: {
+        type: "object",
+        description: "One actor who liked the feed generator in the group.",
+        required: ["actor"],
+        properties: {
+          actor: {
+            type: "string",
+            format: "did"
+          }
+        }
+      },
+      replyNotification: {
+        type: "object",
+        description: "A reply to a post by the requesting account or to a thread they are participating in.",
+        required: ["post", "parent"],
+        properties: {
+          post: {
+            type: "string",
+            format: "at-uri"
+          },
+          parent: {
+            type: "string",
+            format: "at-uri"
+          }
+        }
+      },
+      quoteNotification: {
+        type: "object",
+        description: "A post quoting a post by the requesting account.",
+        required: ["post"],
+        properties: {
+          post: {
+            type: "string",
+            format: "at-uri"
+          },
+          parent: {
+            type: "string",
+            format: "at-uri"
+          }
+        }
+      },
+      mentionNotification: {
+        type: "object",
+        description: "A post mentioning the requesting account.",
+        required: ["post"],
+        properties: {
+          post: {
+            type: "string",
+            format: "at-uri"
+          },
+          parent: {
+            type: "string",
+            format: "at-uri"
+          }
+        }
+      },
+      followBackNotification: {
+        type: "object",
+        description: "An actor followed the requesting account back, possibly via a starter pack.",
+        required: ["actor"],
+        properties: {
+          actor: {
+            type: "string",
+            format: "did"
+          },
+          starterPack: {
+            type: "string",
+            format: "at-uri"
+          }
+        }
+      },
+      verifiedNotification: {
+        type: "object",
+        description: "An actor verified the requesting account.",
+        required: ["actor"],
+        properties: {
+          actor: {
+            type: "string",
+            format: "did"
+          }
+        }
+      },
+      unverifiedNotification: {
+        type: "object",
+        description: "A verification of the requesting account was removed.",
+        required: ["actor"],
+        properties: {
+          actor: {
+            type: "string",
+            format: "did"
+          }
+        }
+      },
+      starterPackJoinedNotification: {
+        type: "object",
+        description: "An actor joined Bluesky via a starter pack created by the requesting account.",
+        required: ["actor", "starterPack"],
+        properties: {
+          actor: {
+            type: "string",
+            format: "did"
+          },
+          starterPack: {
+            type: "string",
+            format: "at-uri"
+          }
+        }
+      },
+      contactMatchNotification: {
+        type: "object",
+        description: "A contact of the requesting account joined Bluesky.",
+        required: ["actor"],
+        properties: {
+          actor: {
+            type: "string",
+            format: "did"
           }
         }
       }
@@ -54750,6 +55268,270 @@ var schemaDict = {
       }
     }
   },
+  ToolsOzoneInboxAppealActionedSubject: {
+    lexicon: 1,
+    id: "tools.ozone.inbox.appealActionedSubject",
+    defs: {
+      main: {
+        type: "procedure",
+        description: "Appeal a moderation action affecting the user's account or content.",
+        input: {
+          encoding: "application/json",
+          schema: {
+            type: "object",
+            required: ["subject"],
+            properties: {
+              action: {
+                type: "union",
+                refs: [
+                  "lex:tools.ozone.inbox.appealActionedSubject#actionRef",
+                  "lex:tools.ozone.inbox.appealActionedSubject#labelRef",
+                  "lex:tools.ozone.inbox.appealActionedSubject#takedownRef"
+                ],
+                closed: true,
+                description: "Moderation action being appealed."
+              },
+              subject: {
+                type: "union",
+                refs: [
+                  "lex:com.atproto.admin.defs#repoRef",
+                  "lex:com.atproto.repo.strongRef"
+                ],
+                description: "Subject being appealed."
+              },
+              reason: {
+                type: "string",
+                maxGraphemes: 2e3,
+                maxLength: 2e4,
+                description: "Optional explanation supplied by the user."
+              },
+              modTool: {
+                type: "ref",
+                ref: "lex:com.atproto.moderation.createReport#modTool"
+              }
+            }
+          }
+        },
+        output: {
+          encoding: "application/json",
+          schema: {
+            type: "ref",
+            ref: "lex:tools.ozone.inbox.defs#subjectView"
+          }
+        },
+        errors: [
+          {
+            name: "InvalidAppealSubject",
+            description: "Invalid appeal subject input."
+          },
+          {
+            name: "AlreadyAppealed",
+            description: "An active appeal already exists for this action."
+          },
+          {
+            name: "NotAppealable",
+            description: "The subject cannot be appealed."
+          },
+          {
+            name: "AppealWindowExpired",
+            description: "The appeal window for this action has closed."
+          }
+        ]
+      },
+      actionRef: {
+        type: "object",
+        required: ["id"],
+        properties: {
+          id: {
+            type: "integer",
+            minimum: 1,
+            description: "ID of the moderation action being appealed, available via actions in mod inbox."
+          }
+        }
+      },
+      labelRef: {
+        type: "object",
+        required: ["val"],
+        properties: {
+          val: {
+            type: "string",
+            minLength: 1,
+            description: "Label being appealed."
+          }
+        }
+      },
+      takedownRef: {
+        type: "object",
+        properties: {}
+      }
+    }
+  },
+  ToolsOzoneInboxDefs: {
+    lexicon: 1,
+    id: "tools.ozone.inbox.defs",
+    defs: {
+      subjectView: {
+        type: "object",
+        description: "A subject belonging to the viewer that has moderation actions against it.",
+        required: ["src", "subject", "enforcement", "createdAt", "updatedAt"],
+        properties: {
+          src: {
+            type: "string",
+            format: "did",
+            description: "DID of the moderation service that took the actions."
+          },
+          subject: {
+            type: "union",
+            refs: [
+              "lex:com.atproto.admin.defs#repoRef",
+              "lex:com.atproto.repo.strongRef"
+            ]
+          },
+          enforcement: {
+            type: "ref",
+            ref: "lex:tools.ozone.inbox.defs#enforcementView"
+          },
+          appeal: {
+            type: "ref",
+            ref: "lex:tools.ozone.inbox.defs#appealView"
+          },
+          availableActions: {
+            type: "array",
+            items: {
+              type: "string",
+              knownValues: ["appeal"]
+            }
+          },
+          latestAction: {
+            type: "ref",
+            ref: "lex:tools.ozone.inbox.defs#actionView"
+          },
+          actionCount: {
+            type: "integer"
+          },
+          createdAt: {
+            type: "string",
+            format: "datetime"
+          },
+          updatedAt: {
+            type: "string",
+            format: "datetime"
+          }
+        }
+      },
+      enforcementView: {
+        type: "object",
+        description: "The current enforcement state of a subject.",
+        required: ["state"],
+        properties: {
+          state: {
+            type: "string",
+            knownValues: [
+              "none",
+              "labeled",
+              "removed",
+              "suspended",
+              "takendown"
+            ]
+          },
+          scope: {
+            type: "string",
+            knownValues: ["network", "app", "labelOnly"]
+          },
+          expiresAt: {
+            type: "string",
+            format: "datetime"
+          },
+          labels: {
+            type: "array",
+            items: {
+              type: "string"
+            },
+            description: "Active label values on the subject, excluding negated and expired labels."
+          }
+        }
+      },
+      appealView: {
+        type: "object",
+        description: "The state of the viewer's appeal against the actions on a subject.",
+        required: ["state"],
+        properties: {
+          state: {
+            type: "string",
+            knownValues: [
+              "none",
+              "pending",
+              "resolved",
+              "superseded",
+              "expired"
+            ]
+          },
+          appealedAt: {
+            type: "string",
+            format: "datetime"
+          },
+          resolvedAt: {
+            type: "string",
+            format: "datetime",
+            description: "When the appeal's report was closed."
+          },
+          note: {
+            type: "string",
+            description: "Moderator explanation, from the publicNote on the closing activity. Absent if none was written."
+          },
+          appealableUntil: {
+            type: "string",
+            format: "datetime"
+          }
+        }
+      },
+      actionView: {
+        type: "object",
+        description: "A single moderation action taken against a subject.",
+        required: ["id", "type", "createdAt"],
+        properties: {
+          id: {
+            type: "integer",
+            description: "Action ID (moderation event ID)."
+          },
+          type: {
+            type: "string",
+            description: "Public action type."
+          },
+          scope: {
+            type: "string",
+            knownValues: ["network", "app", "labelOnly"]
+          },
+          createdAt: {
+            type: "string",
+            format: "datetime"
+          },
+          reversedAt: {
+            type: "string",
+            format: "datetime"
+          },
+          expiresAt: {
+            type: "string",
+            format: "datetime"
+          },
+          labels: {
+            type: "array",
+            items: {
+              type: "string"
+            },
+            description: "Label values, for labelApplied/labelRemoved."
+          },
+          policies: {
+            type: "array",
+            items: {
+              type: "string"
+            },
+            description: "Policies that were applied in this action."
+          }
+        }
+      }
+    }
+  },
   ToolsOzoneModerationCancelScheduledActions: {
     lexicon: 1,
     id: "tools.ozone.moderation.cancelScheduledActions",
@@ -57604,6 +58386,13 @@ var schemaDict = {
                   type: "string"
                 },
                 description: "Policy keys to recommend when actioning reports in this queue"
+              },
+              recommendedLabels: {
+                type: "array",
+                items: {
+                  type: "string"
+                },
+                description: "Labels to recommend for this queue and use as fallback appeal routing mappings"
               }
             }
           }
@@ -57688,6 +58477,13 @@ var schemaDict = {
               type: "string"
             },
             description: "Policy keys recommended when actioning reports in this queue"
+          },
+          recommendedLabels: {
+            type: "array",
+            items: {
+              type: "string"
+            },
+            description: "Labels recommended for this queue and used as a fallback when routing label appeals"
           },
           createdBy: {
             type: "string",
@@ -58073,6 +58869,13 @@ var schemaDict = {
                   type: "string"
                 },
                 description: "Policy keys to recommend when actioning reports in this queue"
+              },
+              recommendedLabels: {
+                type: "array",
+                items: {
+                  type: "string"
+                },
+                description: "Labels to recommend for this queue and use as fallback appeal routing mappings"
               }
             }
           }
@@ -58094,6 +58897,10 @@ var schemaDict = {
           {
             name: "InvalidRecommendedPolicies",
             description: "One or more recommended policy keys do not exist in the configured policy list"
+          },
+          {
+            name: "ConflictingQueue",
+            description: "The queue configuration conflicts with an existing queue"
           }
         ]
       }
@@ -58592,7 +59399,7 @@ var schemaDict = {
             items: {
               type: "integer"
             },
-            description: "Array of moderation event IDs representing actions taken on this report (sorted DESC, most recent first)"
+            description: "Array of moderation event IDs representing actions taken on this report, in append order (most recently linked event last)"
           },
           actions: {
             type: "array",
@@ -58774,25 +59581,65 @@ var schemaDict = {
             type: "integer",
             description: "Number of reports currently not closed."
           },
+          closedCount: {
+            type: "integer",
+            description: "Number of close transitions."
+          },
           actionedCount: {
             type: "integer",
-            description: "Number of reports closed today."
+            description: "Number of closures whose last report action is label, tag, or takedown."
+          },
+          acknowledgedCount: {
+            type: "integer",
+            description: "Number of closures whose last report action is not label, tag, or takedown."
           },
           escalatedCount: {
             type: "integer",
-            description: "Number of reports escalated today."
+            description: "Number of reports escalated."
           },
           inboundCount: {
             type: "integer",
-            description: "Reports received today."
+            description: "Reports received."
+          },
+          labelActionCount: {
+            type: "integer",
+            description: "Closures whose last report action is a label event."
+          },
+          tagActionCount: {
+            type: "integer",
+            description: "Closures whose last report action is a tag event."
+          },
+          takedownActionCount: {
+            type: "integer",
+            description: "Closures whose last report action is a takedown event."
+          },
+          ahtDurationSec: {
+            type: "integer",
+            description: "Sum of report assignment-to-close seconds."
+          },
+          ahtSampleCount: {
+            type: "integer",
+            description: "Number of assigned closed-report samples in ahtDurationSec."
+          },
+          resolutionDurationSec: {
+            type: "integer",
+            description: "Sum of report creation-to-close seconds."
+          },
+          resolutionSampleCount: {
+            type: "integer",
+            description: "Number of closed-report samples in resolutionDurationSec."
           },
           actionRate: {
             type: "integer",
-            description: "Percentage of reports actioned (actionedCount / inboundCount * 100), rounded to nearest integer."
+            description: "Percentage of closures actioned (actionedCount / closedCount * 100), rounded to nearest integer."
           },
           avgHandlingTimeSec: {
             type: "integer",
-            description: "Average time in seconds from report creation (or moderator assignment) to close."
+            description: "Average handling time in seconds from report assignment to close."
+          },
+          avgResolutionTimeSec: {
+            type: "integer",
+            description: "Average resolution time in seconds from report creation to close."
           },
           lastUpdated: {
             type: "string",
@@ -58819,9 +59666,17 @@ var schemaDict = {
             type: "integer",
             description: "Number of reports not closed at time of computation."
           },
+          closedCount: {
+            type: "integer",
+            description: "Number of close transitions during this day."
+          },
           actionedCount: {
             type: "integer",
-            description: "Number of reports closed during this day."
+            description: "Number of closures whose last report action is label, tag, or takedown during this day."
+          },
+          acknowledgedCount: {
+            type: "integer",
+            description: "Number of closures whose last report action is not label, tag, or takedown during this day."
           },
           escalatedCount: {
             type: "integer",
@@ -58831,13 +59686,45 @@ var schemaDict = {
             type: "integer",
             description: "Reports received during this day."
           },
+          labelActionCount: {
+            type: "integer",
+            description: "Closures whose last report action is a label event during this day."
+          },
+          tagActionCount: {
+            type: "integer",
+            description: "Closures whose last report action is a tag event during this day."
+          },
+          takedownActionCount: {
+            type: "integer",
+            description: "Closures whose last report action is a takedown event during this day."
+          },
+          ahtDurationSec: {
+            type: "integer",
+            description: "Sum of report assignment-to-close seconds for this day's samples."
+          },
+          ahtSampleCount: {
+            type: "integer",
+            description: "Number of assigned closed-report samples in ahtDurationSec."
+          },
+          resolutionDurationSec: {
+            type: "integer",
+            description: "Sum of report creation-to-close seconds for this day's samples."
+          },
+          resolutionSampleCount: {
+            type: "integer",
+            description: "Number of closed-report samples in resolutionDurationSec."
+          },
           actionRate: {
             type: "integer",
-            description: "Percentage of reports actioned (actionedCount / inboundCount * 100), rounded to nearest integer."
+            description: "Percentage of closures actioned (actionedCount / closedCount * 100), rounded to nearest integer."
           },
           avgHandlingTimeSec: {
             type: "integer",
-            description: "Average time in seconds from report creation (or moderator assignment) to close."
+            description: "Average handling time in seconds from report assignment to close."
+          },
+          avgResolutionTimeSec: {
+            type: "integer",
+            description: "Average resolution time in seconds from report creation to close."
           }
         }
       },
@@ -59051,7 +59938,7 @@ var schemaDict = {
     defs: {
       main: {
         type: "query",
-        description: "Get live report statistics from the past 24 hours. Filter by queue, moderator, or report type. Omit all parameters for aggregate stats.",
+        description: "Get live report statistics for the current UTC calendar day. Filter by queue, moderator, or report type. Omit all parameters for aggregate stats.",
         parameters: {
           type: "params",
           properties: {
@@ -59429,7 +60316,7 @@ var schemaDict = {
     defs: {
       main: {
         type: "procedure",
-        description: "Recompute report statistics for a date range. Useful for backfilling after failures or data corrections.",
+        description: "Recompute report statistics for a date range.",
         input: {
           encoding: "application/json",
           schema: {
@@ -61379,6 +62266,7 @@ var ids = {
   AppBskyLabelerService: "app.bsky.labeler.service",
   AppBskyNotificationDeclaration: "app.bsky.notification.declaration",
   AppBskyNotificationDefs: "app.bsky.notification.defs",
+  AppBskyNotificationGetGroupedNotifications: "app.bsky.notification.getGroupedNotifications",
   AppBskyNotificationGetPreferences: "app.bsky.notification.getPreferences",
   AppBskyNotificationGetUnreadCount: "app.bsky.notification.getUnreadCount",
   AppBskyNotificationListActivitySubscriptions: "app.bsky.notification.listActivitySubscriptions",
@@ -61589,6 +62477,8 @@ var ids = {
   ToolsOzoneCommunicationListTemplates: "tools.ozone.communication.listTemplates",
   ToolsOzoneCommunicationUpdateTemplate: "tools.ozone.communication.updateTemplate",
   ToolsOzoneHostingGetAccountHistory: "tools.ozone.hosting.getAccountHistory",
+  ToolsOzoneInboxAppealActionedSubject: "tools.ozone.inbox.appealActionedSubject",
+  ToolsOzoneInboxDefs: "tools.ozone.inbox.defs",
   ToolsOzoneModerationCancelScheduledActions: "tools.ozone.moderation.cancelScheduledActions",
   ToolsOzoneModerationDefs: "tools.ozone.moderation.defs",
   ToolsOzoneModerationEmitEvent: "tools.ozone.moderation.emitEvent",
@@ -65077,6 +65967,41 @@ function toKnownErr97(e) {
   return e;
 }
 
+// node_modules/@atproto/api/dist/client/types/tools/ozone/inbox/appealActionedSubject.js
+var InvalidAppealSubjectError = class extends XRPCError {
+  constructor(src2) {
+    super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
+  }
+};
+var AlreadyAppealedError = class extends XRPCError {
+  constructor(src2) {
+    super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
+  }
+};
+var NotAppealableError = class extends XRPCError {
+  constructor(src2) {
+    super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
+  }
+};
+var AppealWindowExpiredError = class extends XRPCError {
+  constructor(src2) {
+    super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
+  }
+};
+function toKnownErr98(e) {
+  if (e instanceof XRPCError) {
+    if (e.error === "InvalidAppealSubject")
+      return new InvalidAppealSubjectError(e);
+    if (e.error === "AlreadyAppealed")
+      return new AlreadyAppealedError(e);
+    if (e.error === "NotAppealable")
+      return new NotAppealableError(e);
+    if (e.error === "AppealWindowExpired")
+      return new AppealWindowExpiredError(e);
+  }
+  return e;
+}
+
 // node_modules/@atproto/api/dist/client/types/tools/ozone/moderation/defs.js
 var id9 = "tools.ozone.moderation.defs";
 var REVIEWOPEN = `${id9}#reviewOpen`;
@@ -65098,7 +66023,7 @@ var DuplicateExternalIdError = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr98(e) {
+function toKnownErr99(e) {
   if (e instanceof XRPCError) {
     if (e.error === "SubjectHasAction")
       return new SubjectHasActionError(e);
@@ -65114,7 +66039,7 @@ var RepoNotFoundError8 = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr99(e) {
+function toKnownErr100(e) {
   if (e instanceof XRPCError) {
     if (e.error === "RepoNotFound")
       return new RepoNotFoundError8(e);
@@ -65128,7 +66053,7 @@ var RecordNotFoundError3 = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr100(e) {
+function toKnownErr101(e) {
   if (e instanceof XRPCError) {
     if (e.error === "RecordNotFound")
       return new RecordNotFoundError3(e);
@@ -65142,7 +66067,7 @@ var RepoNotFoundError9 = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr101(e) {
+function toKnownErr102(e) {
   if (e instanceof XRPCError) {
     if (e.error === "RepoNotFound")
       return new RepoNotFoundError9(e);
@@ -65156,7 +66081,7 @@ var InvalidAssignmentError = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr102(e) {
+function toKnownErr103(e) {
   if (e instanceof XRPCError) {
     if (e.error === "InvalidAssignment")
       return new InvalidAssignmentError(e);
@@ -65175,7 +66100,7 @@ var ConflictingQueueError = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr103(e) {
+function toKnownErr104(e) {
   if (e instanceof XRPCError) {
     if (e.error === "InvalidRecommendedPolicies")
       return new InvalidRecommendedPoliciesError(e);
@@ -65191,7 +66116,7 @@ var OutOfRangeError = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr104(e) {
+function toKnownErr105(e) {
   if (e instanceof XRPCError) {
     if (e.error === "OutOfRange")
       return new OutOfRangeError(e);
@@ -65205,7 +66130,7 @@ var InvalidAssignmentError2 = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr105(e) {
+function toKnownErr106(e) {
   if (e instanceof XRPCError) {
     if (e.error === "InvalidAssignment")
       return new InvalidAssignmentError2(e);
@@ -65219,10 +66144,17 @@ var InvalidRecommendedPoliciesError2 = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr106(e) {
+var ConflictingQueueError2 = class extends XRPCError {
+  constructor(src2) {
+    super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
+  }
+};
+function toKnownErr107(e) {
   if (e instanceof XRPCError) {
     if (e.error === "InvalidRecommendedPolicies")
       return new InvalidRecommendedPoliciesError2(e);
+    if (e.error === "ConflictingQueue")
+      return new ConflictingQueueError2(e);
   }
   return e;
 }
@@ -65238,7 +66170,7 @@ var InvalidAssignmentError3 = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr107(e) {
+function toKnownErr108(e) {
   if (e instanceof XRPCError) {
     if (e.error === "AlreadyAssigned")
       return new AlreadyAssignedError(e);
@@ -65264,7 +66196,7 @@ var AlreadyInTargetStateError = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr108(e) {
+function toKnownErr109(e) {
   if (e instanceof XRPCError) {
     if (e.error === "ReportNotFound")
       return new ReportNotFoundError(e);
@@ -65325,7 +66257,7 @@ var NotFoundError2 = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr109(e) {
+function toKnownErr110(e) {
   if (e instanceof XRPCError) {
     if (e.error === "NotFound")
       return new NotFoundError2(e);
@@ -65339,7 +66271,7 @@ var NotFoundError3 = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr110(e) {
+function toKnownErr111(e) {
   if (e instanceof XRPCError) {
     if (e.error === "NotFound")
       return new NotFoundError3(e);
@@ -65373,7 +66305,7 @@ var QueueDisabledError = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr111(e) {
+function toKnownErr112(e) {
   if (e instanceof XRPCError) {
     if (e.error === "ReportNotFound")
       return new ReportNotFoundError2(e);
@@ -65395,7 +66327,7 @@ var InvalidAssignmentError4 = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr112(e) {
+function toKnownErr113(e) {
   if (e instanceof XRPCError) {
     if (e.error === "InvalidAssignment")
       return new InvalidAssignmentError4(e);
@@ -65414,7 +66346,7 @@ var RuleAlreadyExistsError = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr113(e) {
+function toKnownErr114(e) {
   if (e instanceof XRPCError) {
     if (e.error === "InvalidUrl")
       return new InvalidUrlError(e);
@@ -65430,7 +66362,7 @@ var RuleNotFoundError = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr114(e) {
+function toKnownErr115(e) {
   if (e instanceof XRPCError) {
     if (e.error === "RuleNotFound")
       return new RuleNotFoundError(e);
@@ -65444,7 +66376,7 @@ var RuleNotFoundError2 = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr115(e) {
+function toKnownErr116(e) {
   if (e instanceof XRPCError) {
     if (e.error === "RuleNotFound")
       return new RuleNotFoundError2(e);
@@ -65458,7 +66390,7 @@ var SetNotFoundError = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr116(e) {
+function toKnownErr117(e) {
   if (e instanceof XRPCError) {
     if (e.error === "SetNotFound")
       return new SetNotFoundError(e);
@@ -65472,7 +66404,7 @@ var SetNotFoundError2 = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr117(e) {
+function toKnownErr118(e) {
   if (e instanceof XRPCError) {
     if (e.error === "SetNotFound")
       return new SetNotFoundError2(e);
@@ -65486,7 +66418,7 @@ var SetNotFoundError3 = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr118(e) {
+function toKnownErr119(e) {
   if (e instanceof XRPCError) {
     if (e.error === "SetNotFound")
       return new SetNotFoundError3(e);
@@ -65500,7 +66432,7 @@ var MemberAlreadyExistsError = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr119(e) {
+function toKnownErr120(e) {
   if (e instanceof XRPCError) {
     if (e.error === "MemberAlreadyExists")
       return new MemberAlreadyExistsError(e);
@@ -65526,7 +66458,7 @@ var CannotDeleteSelfError = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr120(e) {
+function toKnownErr121(e) {
   if (e instanceof XRPCError) {
     if (e.error === "MemberNotFound")
       return new MemberNotFoundError(e);
@@ -65542,7 +66474,7 @@ var MemberNotFoundError2 = class extends XRPCError {
     super(src2.status, src2.error, src2.message, src2.headers, { cause: src2 });
   }
 };
-function toKnownErr121(e) {
+function toKnownErr122(e) {
   if (e instanceof XRPCError) {
     if (e.error === "MemberNotFound")
       return new MemberNotFoundError2(e);
@@ -66488,6 +67420,9 @@ var AppBskyNotificationNS = class {
   constructor(client) {
     this._client = client;
     this.declaration = new AppBskyNotificationDeclarationRecord(client);
+  }
+  getGroupedNotifications(params2, opts) {
+    return this._client.call("app.bsky.notification.getGroupedNotifications", params2, void 0, opts);
   }
   getPreferences(params2, opts) {
     return this._client.call("app.bsky.notification.getPreferences", params2, void 0, opts);
@@ -67473,6 +68408,7 @@ var ToolsOzoneNS = class {
     this._client = client;
     this.communication = new ToolsOzoneCommunicationNS(client);
     this.hosting = new ToolsOzoneHostingNS(client);
+    this.inbox = new ToolsOzoneInboxNS(client);
     this.moderation = new ToolsOzoneModerationNS(client);
     this.queue = new ToolsOzoneQueueNS(client);
     this.report = new ToolsOzoneReportNS(client);
@@ -67514,6 +68450,16 @@ var ToolsOzoneHostingNS = class {
     return this._client.call("tools.ozone.hosting.getAccountHistory", params2, void 0, opts);
   }
 };
+var ToolsOzoneInboxNS = class {
+  constructor(client) {
+    this._client = client;
+  }
+  appealActionedSubject(data, opts) {
+    return this._client.call("tools.ozone.inbox.appealActionedSubject", opts?.qp, data, opts).catch((e) => {
+      throw toKnownErr98(e);
+    });
+  }
+};
 var ToolsOzoneModerationNS = class {
   constructor(client) {
     this._client = client;
@@ -67523,7 +68469,7 @@ var ToolsOzoneModerationNS = class {
   }
   emitEvent(data, opts) {
     return this._client.call("tools.ozone.moderation.emitEvent", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr98(e);
+      throw toKnownErr99(e);
     });
   }
   getAccountPreferences(params2, opts) {
@@ -67531,7 +68477,7 @@ var ToolsOzoneModerationNS = class {
   }
   getAccountTimeline(params2, opts) {
     return this._client.call("tools.ozone.moderation.getAccountTimeline", params2, void 0, opts).catch((e) => {
-      throw toKnownErr99(e);
+      throw toKnownErr100(e);
     });
   }
   getEvent(params2, opts) {
@@ -67539,7 +68485,7 @@ var ToolsOzoneModerationNS = class {
   }
   getRecord(params2, opts) {
     return this._client.call("tools.ozone.moderation.getRecord", params2, void 0, opts).catch((e) => {
-      throw toKnownErr100(e);
+      throw toKnownErr101(e);
     });
   }
   getRecords(params2, opts) {
@@ -67547,7 +68493,7 @@ var ToolsOzoneModerationNS = class {
   }
   getRepo(params2, opts) {
     return this._client.call("tools.ozone.moderation.getRepo", params2, void 0, opts).catch((e) => {
-      throw toKnownErr101(e);
+      throw toKnownErr102(e);
     });
   }
   getReporterStats(params2, opts) {
@@ -67581,12 +68527,12 @@ var ToolsOzoneQueueNS = class {
   }
   assignModerator(data, opts) {
     return this._client.call("tools.ozone.queue.assignModerator", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr102(e);
+      throw toKnownErr103(e);
     });
   }
   createQueue(data, opts) {
     return this._client.call("tools.ozone.queue.createQueue", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr103(e);
+      throw toKnownErr104(e);
     });
   }
   deleteQueue(data, opts) {
@@ -67600,17 +68546,17 @@ var ToolsOzoneQueueNS = class {
   }
   routeReports(data, opts) {
     return this._client.call("tools.ozone.queue.routeReports", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr104(e);
+      throw toKnownErr105(e);
     });
   }
   unassignModerator(data, opts) {
     return this._client.call("tools.ozone.queue.unassignModerator", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr105(e);
+      throw toKnownErr106(e);
     });
   }
   updateQueue(data, opts) {
     return this._client.call("tools.ozone.queue.updateQueue", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr106(e);
+      throw toKnownErr107(e);
     });
   }
 };
@@ -67620,7 +68566,7 @@ var ToolsOzoneReportNS = class {
   }
   assignModerator(data, opts) {
     return this._client.call("tools.ozone.report.assignModerator", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr107(e);
+      throw toKnownErr108(e);
     });
   }
   closeReports(data, opts) {
@@ -67628,7 +68574,7 @@ var ToolsOzoneReportNS = class {
   }
   createActivity(data, opts) {
     return this._client.call("tools.ozone.report.createActivity", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr108(e);
+      throw toKnownErr109(e);
     });
   }
   getAssignments(params2, opts) {
@@ -67639,7 +68585,7 @@ var ToolsOzoneReportNS = class {
   }
   getLatestReport(params2, opts) {
     return this._client.call("tools.ozone.report.getLatestReport", params2, void 0, opts).catch((e) => {
-      throw toKnownErr109(e);
+      throw toKnownErr110(e);
     });
   }
   getLiveStats(params2, opts) {
@@ -67647,7 +68593,7 @@ var ToolsOzoneReportNS = class {
   }
   getReport(params2, opts) {
     return this._client.call("tools.ozone.report.getReport", params2, void 0, opts).catch((e) => {
-      throw toKnownErr110(e);
+      throw toKnownErr111(e);
     });
   }
   listActivities(params2, opts) {
@@ -67661,7 +68607,7 @@ var ToolsOzoneReportNS = class {
   }
   reassignQueue(data, opts) {
     return this._client.call("tools.ozone.report.reassignQueue", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr111(e);
+      throw toKnownErr112(e);
     });
   }
   refreshStats(data, opts) {
@@ -67669,7 +68615,7 @@ var ToolsOzoneReportNS = class {
   }
   unassignModerator(data, opts) {
     return this._client.call("tools.ozone.report.unassignModerator", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr112(e);
+      throw toKnownErr113(e);
     });
   }
 };
@@ -67679,7 +68625,7 @@ var ToolsOzoneSafelinkNS = class {
   }
   addRule(data, opts) {
     return this._client.call("tools.ozone.safelink.addRule", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr113(e);
+      throw toKnownErr114(e);
     });
   }
   queryEvents(data, opts) {
@@ -67690,12 +68636,12 @@ var ToolsOzoneSafelinkNS = class {
   }
   removeRule(data, opts) {
     return this._client.call("tools.ozone.safelink.removeRule", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr114(e);
+      throw toKnownErr115(e);
     });
   }
   updateRule(data, opts) {
     return this._client.call("tools.ozone.safelink.updateRule", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr115(e);
+      throw toKnownErr116(e);
     });
   }
 };
@@ -67716,17 +68662,17 @@ var ToolsOzoneSetNS = class {
   }
   deleteSet(data, opts) {
     return this._client.call("tools.ozone.set.deleteSet", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr116(e);
+      throw toKnownErr117(e);
     });
   }
   deleteValues(data, opts) {
     return this._client.call("tools.ozone.set.deleteValues", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr117(e);
+      throw toKnownErr118(e);
     });
   }
   getValues(params2, opts) {
     return this._client.call("tools.ozone.set.getValues", params2, void 0, opts).catch((e) => {
-      throw toKnownErr118(e);
+      throw toKnownErr119(e);
     });
   }
   querySets(params2, opts) {
@@ -67770,12 +68716,12 @@ var ToolsOzoneTeamNS = class {
   }
   addMember(data, opts) {
     return this._client.call("tools.ozone.team.addMember", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr119(e);
+      throw toKnownErr120(e);
     });
   }
   deleteMember(data, opts) {
     return this._client.call("tools.ozone.team.deleteMember", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr120(e);
+      throw toKnownErr121(e);
     });
   }
   listMembers(params2, opts) {
@@ -67783,7 +68729,7 @@ var ToolsOzoneTeamNS = class {
   }
   updateMember(data, opts) {
     return this._client.call("tools.ozone.team.updateMember", opts?.qp, data, opts).catch((e) => {
-      throw toKnownErr121(e);
+      throw toKnownErr122(e);
     });
   }
 };
@@ -71283,7 +72229,7 @@ async function login(opts) {
       try {
         const res = await agent.com.atproto.repo.getRecord({ repo: did2, collection: POST_COLLECTION, rkey });
         if (!res.data.cid) throw new Error(`getRecord for ${rkey} returned no cid`);
-        return { uri: res.data.uri, cid: res.data.cid };
+        return { uri: res.data.uri, cid: res.data.cid, value: res.data.value };
       } catch (err) {
         if (isXRPCError(err) && err.error === "RecordNotFound") return void 0;
         throw err;
@@ -71297,7 +72243,7 @@ async function login(opts) {
 }
 
 // src/discover.ts
-import { readdir as readdir2, stat as stat2 } from "node:fs/promises";
+import { readdir as readdir2, realpath, stat as stat2 } from "node:fs/promises";
 import path2 from "node:path";
 function isIgnoredName(name) {
   return name.startsWith("_") || name.startsWith(".") || name === "node_modules";
@@ -71305,21 +72251,37 @@ function isIgnoredName(name) {
 function toPosix(p) {
   return p.split(path2.sep).join(path2.posix.sep);
 }
-async function discover(dir, cwd) {
-  const root = path2.resolve(cwd, dir);
+async function keyRoot(dir, cwd) {
+  let current = path2.resolve(cwd, dir);
+  for (; ; ) {
+    try {
+      await stat2(path2.join(current, ".git"));
+      return current;
+    } catch {
+    }
+    const parent = path2.dirname(current);
+    if (parent === current) return path2.resolve(cwd);
+    current = parent;
+  }
+}
+async function discover(dir, cwd, root = cwd) {
+  const start = path2.resolve(cwd, dir);
   let info2;
   try {
-    info2 = await stat2(root);
+    info2 = await stat2(start);
   } catch {
-    throw new Error(`directory not found: ${dir} (resolved to ${root})`);
+    throw new Error(`directory not found: ${dir} (resolved to ${start})`);
   }
-  if (!info2.isDirectory()) throw new Error(`not a directory: ${dir} (resolved to ${root})`);
+  if (!info2.isDirectory()) throw new Error(`not a directory: ${dir} (resolved to ${start})`);
   const found = [];
-  await walk(root, cwd, found);
+  await walk(start, path2.resolve(cwd, root), found, /* @__PURE__ */ new Set());
   found.sort((a, b) => a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0);
   return found;
 }
-async function walk(dirPath, cwd, out) {
+async function walk(dirPath, root, out, seen) {
+  const real = await realpath(dirPath);
+  if (seen.has(real)) return;
+  seen.add(real);
   const entries = await readdir2(dirPath, { withFileTypes: true });
   for (const entry of entries) {
     if (isIgnoredName(entry.name)) continue;
@@ -71336,9 +72298,9 @@ async function walk(dirPath, cwd, out) {
       }
     }
     if (isDir) {
-      await walk(abs, cwd, out);
+      await walk(abs, root, out, seen);
     } else if (isFile && path2.extname(entry.name).toLowerCase() === ".md") {
-      out.push({ path: abs, relPath: toPosix(path2.relative(cwd, abs)) });
+      out.push({ path: abs, relPath: toPosix(path2.relative(root, abs)) });
     }
   }
 }
@@ -77790,6 +78752,8 @@ function fromMarkdown(value, encoding, options) {
 }
 function compiler(options) {
   const config = {
+    afterExit: [],
+    beforeEnter: [],
     transforms: [],
     canContainEols: ["emphasis", "fragment", "heading", "paragraph", "strong"],
     enter: {
@@ -77893,7 +78857,8 @@ function compiler(options) {
   function compile(events) {
     let tree = {
       type: "root",
-      children: []
+      children: [],
+      position: void 0
     };
     const context = {
       stack: [tree],
@@ -77906,24 +78871,40 @@ function compiler(options) {
       data
     };
     const listStack = [];
+    const prepared = [];
     let index2 = -1;
     while (++index2 < events.length) {
+      prepared.push(events[index2]);
       if (events[index2][1].type === "listOrdered" || events[index2][1].type === "listUnordered") {
         if (events[index2][0] === "enter") {
-          listStack.push(index2);
+          listStack.push(prepared.length - 1);
         } else {
           const tail = listStack.pop();
-          index2 = prepareList(events, tail, index2);
+          prepareList(prepared, tail);
         }
       }
     }
+    events = prepared;
     index2 = -1;
     while (++index2 < events.length) {
       const handler = config[events[index2][0]];
-      if (own2.call(handler, events[index2][1].type)) {
-        handler[events[index2][1].type].call(Object.assign({
+      if (events[index2][0] === "enter" && config.beforeEnter.length > 0) {
+        callListeners(config.beforeEnter, {
+          ...context,
           sliceSerialize: events[index2][2].sliceSerialize
-        }, context), events[index2][1]);
+        }, events[index2][1]);
+      }
+      if (own2.call(handler, events[index2][1].type)) {
+        handler[events[index2][1].type].call({
+          ...context,
+          sliceSerialize: events[index2][2].sliceSerialize
+        }, events[index2][1]);
+      }
+      if (events[index2][0] === "exit" && config.afterExit.length > 0) {
+        callListeners(config.afterExit, {
+          ...context,
+          sliceSerialize: events[index2][2].sliceSerialize
+        }, events[index2][1]);
       }
     }
     if (context.tokenStack.length > 0) {
@@ -77949,7 +78930,14 @@ function compiler(options) {
     }
     return tree;
   }
-  function prepareList(events, start, length2) {
+  function callListeners(listeners, context, token) {
+    let index2 = -1;
+    while (++index2 < listeners.length) {
+      listeners[index2].call(context, token);
+    }
+  }
+  function prepareList(events, start) {
+    const end = events.length - 1;
     let index2 = start - 1;
     let containerBalance = -1;
     let listSpread = false;
@@ -77957,7 +78945,8 @@ function compiler(options) {
     let lineIndex;
     let firstBlankLineIndex;
     let atMarker;
-    while (++index2 <= length2) {
+    const insertions = [];
+    while (++index2 <= end) {
       const event = events[index2];
       switch (event[1].type) {
         case "listUnordered":
@@ -78014,9 +79003,10 @@ function compiler(options) {
             listItem2._spread = true;
           }
           listItem2.end = Object.assign({}, lineIndex ? events[lineIndex][1].start : event[1].end);
-          events.splice(lineIndex || index2, 0, ["exit", listItem2, event[2]]);
-          index2++;
-          length2++;
+          insertions.push({
+            at: lineIndex || index2,
+            event: ["exit", listItem2, event[2]]
+          });
         }
         if (event[1].type === "listItemPrefix") {
           const item = {
@@ -78027,16 +79017,25 @@ function compiler(options) {
             end: void 0
           };
           listItem2 = item;
-          events.splice(index2, 0, ["enter", item, event[2]]);
-          index2++;
-          length2++;
+          insertions.push({
+            at: index2,
+            event: ["enter", item, event[2]]
+          });
           firstBlankLineIndex = void 0;
           atMarker = true;
         }
       }
     }
+    const listEvents = events.splice(start);
+    let insertion = 0;
+    index2 = -1;
+    while (++index2 < listEvents.length) {
+      while (insertion < insertions.length && insertions[insertion].at === start + index2) {
+        events.push(insertions[insertion++].event);
+      }
+      events.push(listEvents[index2]);
+    }
     events[start][1]._spread = listSpread;
-    return length2;
   }
   function opener(create3, and) {
     return open2;
@@ -78078,7 +79077,8 @@ function compiler(options) {
         start: token.start,
         end: token.end
       }) + "): it\u2019s not open");
-    } else if (open2[0].type !== token.type) {
+    }
+    if (open2[0].type !== token.type) {
       if (onExitError) {
         onExitError.call(this, token, open2[0]);
       } else {
@@ -78314,7 +79314,8 @@ function compiler(options) {
   function blockQuote2() {
     return {
       type: "blockquote",
-      children: []
+      children: [],
+      position: void 0
     };
   }
   function codeFlow() {
@@ -78322,13 +79323,15 @@ function compiler(options) {
       type: "code",
       lang: null,
       meta: null,
-      value: ""
+      value: "",
+      position: void 0
     };
   }
   function codeText2() {
     return {
       type: "inlineCode",
-      value: ""
+      value: "",
+      position: void 0
     };
   }
   function definition2() {
@@ -78337,13 +79340,15 @@ function compiler(options) {
       identifier: "",
       label: null,
       title: null,
-      url: ""
+      url: "",
+      position: void 0
     };
   }
   function emphasis() {
     return {
       type: "emphasis",
-      children: []
+      children: [],
+      position: void 0
     };
   }
   function heading() {
@@ -78351,18 +79356,21 @@ function compiler(options) {
       type: "heading",
       // @ts-expect-error `depth` will be set later.
       depth: 0,
-      children: []
+      children: [],
+      position: void 0
     };
   }
   function hardBreak() {
     return {
-      type: "break"
+      type: "break",
+      position: void 0
     };
   }
   function html() {
     return {
       type: "html",
-      value: ""
+      value: "",
+      position: void 0
     };
   }
   function image() {
@@ -78370,7 +79378,8 @@ function compiler(options) {
       type: "image",
       title: null,
       url: "",
-      alt: null
+      alt: null,
+      position: void 0
     };
   }
   function link() {
@@ -78378,7 +79387,8 @@ function compiler(options) {
       type: "link",
       title: null,
       url: "",
-      children: []
+      children: [],
+      position: void 0
     };
   }
   function list2(token) {
@@ -78387,7 +79397,8 @@ function compiler(options) {
       ordered: token.type === "listOrdered",
       start: null,
       spread: token._spread,
-      children: []
+      children: [],
+      position: void 0
     };
   }
   function listItem(token) {
@@ -78395,30 +79406,35 @@ function compiler(options) {
       type: "listItem",
       spread: token._spread,
       checked: null,
-      children: []
+      children: [],
+      position: void 0
     };
   }
   function paragraph() {
     return {
       type: "paragraph",
-      children: []
+      children: [],
+      position: void 0
     };
   }
   function strong() {
     return {
       type: "strong",
-      children: []
+      children: [],
+      position: void 0
     };
   }
   function text3() {
     return {
       type: "text",
-      value: ""
+      value: "",
+      position: void 0
     };
   }
   function thematicBreak2() {
     return {
-      type: "thematicBreak"
+      type: "thematicBreak",
+      position: void 0
     };
   }
 }
@@ -78459,6 +79475,14 @@ function extension(combined, extension2) {
           }
           break;
         }
+        case "afterExit":
+        case "beforeEnter": {
+          const right = extension2[key];
+          if (right) {
+            combined[key].push(right);
+          }
+          break;
+        }
         case "enter":
         case "exit": {
           const right = extension2[key];
@@ -78480,12 +79504,11 @@ function defaultOnError(left, right) {
       start: right.start,
       end: right.end
     }) + ") is open");
-  } else {
-    throw new Error("Cannot close document, a token (`" + right.type + "`, " + stringifyPosition({
-      start: right.start,
-      end: right.end
-    }) + ") is still open");
   }
+  throw new Error("Cannot close document, a token (`" + right.type + "`, " + stringifyPosition({
+    start: right.start,
+    end: right.end
+  }) + ") is still open");
 }
 
 // src/frontmatter.ts
@@ -78634,9 +79657,9 @@ var RunBuilder = class {
     for (const r of runs) this.push(r.text, r.link);
   }
 };
-async function parseFile(filePath, cwd) {
+async function parseFile(filePath, cwd, keyRoot2 = cwd) {
   const abs = path4.resolve(cwd, filePath);
-  const relPath = toPosix(path4.relative(cwd, abs));
+  const relPath = toPosix(path4.relative(path4.resolve(cwd, keyRoot2), abs));
   let raw;
   try {
     raw = await readFile(abs);
@@ -78929,6 +79952,7 @@ import { readFile as readFile3 } from "node:fs/promises";
 // src/linkcard.ts
 var LINK_CARD_TIMEOUT_MS = 1e4;
 var USER_AGENT = "post-together";
+var HTML_MAX_BYTES = 512e3;
 var NAMED_ENTITIES = {
   amp: "&",
   lt: "<",
@@ -78958,7 +79982,7 @@ function attr(tag, name) {
 }
 function parseOpenGraph(html) {
   const out = {};
-  const head = html.length > 512e3 ? html.slice(0, 512e3) : html;
+  const head = html.length > HTML_MAX_BYTES ? html.slice(0, HTML_MAX_BYTES) : html;
   for (const [tag] of head.matchAll(/<meta\b[^>]*>/gi)) {
     const key = (attr(tag, "property") ?? attr(tag, "name"))?.trim().toLowerCase();
     if (!key || !key.startsWith("og:")) continue;
@@ -78991,8 +80015,8 @@ async function fetchLinkCard(url, opts = {}) {
   if (contentType && !/^(text\/html|application\/xhtml\+xml)\b/i.test(contentType)) {
     throw new Error(`GET ${url} returned ${contentType}, not HTML`);
   }
-  const html = await res.text();
-  const og = parseOpenGraph(html);
+  const { bytes: bytes2 } = await readCapped(res, HTML_MAX_BYTES);
+  const og = parseOpenGraph(new TextDecoder().decode(bytes2));
   const meta = { uri: url, title: og.title ?? "", description: og.description ?? "" };
   if (og.image !== void 0) {
     const thumb = await fetchThumb(og.image, res.url || url, doFetch, timeoutMs);
@@ -79026,9 +80050,42 @@ async function fetchThumb(image, base2, doFetch, timeoutMs) {
     });
     return void 0;
   }
-  const bytes2 = new Uint8Array(await res.arrayBuffer());
-  if (bytes2.byteLength === 0 || bytes2.byteLength > THUMB_MAX_BYTES) return void 0;
+  const { bytes: bytes2, truncated } = await readCapped(res, THUMB_MAX_BYTES);
+  if (truncated || bytes2.byteLength === 0) return void 0;
   return { bytes: bytes2, mime };
+}
+async function readCapped(res, max) {
+  if (!res.body) return { bytes: new Uint8Array(0), truncated: false };
+  const reader = res.body.getReader();
+  const chunks = [];
+  let size = 0;
+  let truncated = false;
+  try {
+    for (; ; ) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const room = max - size;
+      if (value.byteLength > room) {
+        chunks.push(value.subarray(0, room));
+        size = max;
+        truncated = true;
+        break;
+      }
+      chunks.push(value);
+      size += value.byteLength;
+    }
+  } finally {
+    if (truncated) await reader.cancel().catch(() => {
+    });
+    reader.releaseLock();
+  }
+  const bytes2 = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk2 of chunks) {
+    bytes2.set(chunk2, offset);
+    offset += chunk2.byteLength;
+  }
+  return { bytes: bytes2, truncated };
 }
 
 // src/rkey.ts
@@ -79241,14 +80298,19 @@ async function publishFile(client, store, rendered, opts) {
     });
   }
   let found = 0;
-  for (const ref of refs) {
+  for (const [i, ref] of refs.entries()) {
     if (ref.cid !== void 0) continue;
     const existing = await guard(() => client.getRecord(ref.rkey));
-    if (existing) {
-      ref.cid = existing.cid;
-      found++;
-      logger.info(`${relPath}: record ${ref.rkey} already exists on the PDS`);
+    if (!existing) continue;
+    if (existing.value["text"] !== posts[i]?.text) {
+      logger.warn(
+        `${relPath}: post ${i + 1} already exists on the PDS (${existing.uri}) with different text, so the file changed since it was posted or another file used this path; post-together never edits or reposts (skipping)`
+      );
+      return { posts: [], resumed: false, changed: true };
     }
+    ref.cid = existing.cid;
+    found++;
+    logger.info(`${relPath}: record ${ref.rkey} already exists on the PDS`);
   }
   const entry = (extra = {}) => ({
     hash: file.hash,
@@ -79258,7 +80320,7 @@ async function publishFile(client, store, rendered, opts) {
   });
   if (refs.every((r) => r.cid !== void 0)) {
     await store.set(relPath, entry({ postedAt: now().toISOString() }));
-    return { posts: clonePosts(refs), resumed: true };
+    return { posts: clonePosts(refs), resumed: true, changed: false };
   }
   await store.set(relPath, entry());
   const base2 = baseTime(rendered, now());
@@ -79292,7 +80354,7 @@ async function publishFile(client, store, rendered, opts) {
     parent = sr;
   }
   await store.set(relPath, entry({ postedAt: now().toISOString() }));
-  return { posts: clonePosts(refs), resumed: carried + found > 0 };
+  return { posts: clonePosts(refs), resumed: carried + found > 0, changed: false };
 }
 async function buildRecord(client, post, ctx) {
   const record = { $type: "app.bsky.feed.post", text: post.text };
@@ -79733,14 +80795,16 @@ async function run(options = {}) {
   const opts = withDefaults(options);
   logger.debug(`options: ${describeOptions(opts)}`);
   const cwd = opts.cwd;
-  const files = await discover(opts.dir, cwd);
+  const root = await keyRoot(opts.dir, cwd);
+  if (root !== cwd) logger.debug(`state and record keys are relative to ${root}`);
+  const files = await discover(opts.dir, cwd, root);
   if (files.length === 0) logger.warn(`no Markdown files found under ${opts.dir}`);
   const candidates = [];
   const rendered = [];
   const problems = [];
   for (const f of files) {
     try {
-      const parsed = await parseFile(f.path, cwd);
+      const parsed = await parseFile(f.path, cwd, root);
       if (parsed.frontmatter.draft) {
         candidates.push({ relPath: parsed.relPath, hash: parsed.hash, draft: true });
         continue;
@@ -79761,7 +80825,7 @@ ${problems.join("\n")}`);
   }
   const statePath = resolveStatePath(opts.stateFile, cwd);
   const store = await StateStore.open(statePath);
-  if (opts.mode === "init") return init(candidates, rendered, store, opts.commit, opts.commitMessage, cwd, logger);
+  if (opts.mode === "init") return init(candidates, rendered, store, opts, logger);
   const items = plan(candidates, store.state, opts.limit, logger);
   const result = { posted: [], resumed: [], skipped: [], rendered };
   const toPost = [];
@@ -79790,20 +80854,28 @@ ${problems.join("\n")}`);
   const client = await login({ service: opts.service, identifier: opts.identifier, password: opts.password });
   result.did = client.did;
   logger.info(`logged in as ${client.did} via ${opts.service}`);
-  for (const item of toPost) {
-    const outcome = await publishFile(client, store, item.rendered, { logger });
-    const first = outcome.posts[0];
-    const link = first ? bskyAppUrl(client.did, first.rkey) : "(no posts)";
-    const n = outcome.posts.length;
-    const entry = { relPath: item.relPath, posts: outcome.posts };
-    if (outcome.resumed) result.resumed.push(entry);
-    else result.posted.push(entry);
-    logger.info(`${outcome.resumed ? "resumed" : "posted"} ${item.relPath} \u2192 ${link} (${n} post${n === 1 ? "" : "s"})`);
+  try {
+    for (const item of toPost) {
+      const outcome = await publishFile(client, store, item.rendered, { logger });
+      if (outcome.changed) {
+        result.skipped.push({ relPath: item.relPath, reason: "changed" });
+        logger.info(`skipped ${item.relPath} (${SKIP_REASON_TEXT.changed})`);
+        continue;
+      }
+      const first = outcome.posts[0];
+      const link = first ? bskyAppUrl(client.did, first.rkey) : "(no posts)";
+      const n = outcome.posts.length;
+      const entry = { relPath: item.relPath, posts: outcome.posts };
+      if (outcome.resumed) result.resumed.push(entry);
+      else result.posted.push(entry);
+      logger.info(`${outcome.resumed ? "resumed" : "posted"} ${item.relPath} \u2192 ${link} (${n} post${n === 1 ? "" : "s"})`);
+    }
+  } finally {
+    await maybeCommit(store, opts.commit, opts.commitMessage, cwd, logger);
   }
-  await maybeCommit(store, opts.commit, opts.commitMessage, cwd, logger);
   return result;
 }
-async function init(candidates, rendered, store, commit, commitMessage, cwd, logger) {
+async function init(candidates, rendered, store, opts, logger) {
   if (store.path === null) throw new UsageError("init needs a state file; state-file is set to none");
   const result = { posted: [], resumed: [], skipped: [], rendered };
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -79820,12 +80892,21 @@ async function init(candidates, rendered, store, commit, commitMessage, cwd, log
       logger.info(`skipped ${c.relPath} (already posted)`);
       continue;
     }
-    await store.set(c.relPath, { hash: c.hash, did: "", postedAt: now, posts: [] });
     marked++;
+    if (opts.dryRun) {
+      logger.info(`would mark ${c.relPath} as posted`);
+      continue;
+    }
+    await store.set(c.relPath, { hash: c.hash, did: "", postedAt: now, posts: [] });
     logger.info(`marked ${c.relPath} as posted`);
   }
-  logger.info(`init: marked ${marked} file${marked === 1 ? "" : "s"} as posted in ${store.path}`);
-  await maybeCommit(store, commit, commitMessage, cwd, logger);
+  const files = `${marked} file${marked === 1 ? "" : "s"}`;
+  if (opts.dryRun) {
+    logger.info(`dry run: init would mark ${files} as posted in ${store.path}; nothing was written`);
+    return result;
+  }
+  logger.info(`init: marked ${files} as posted in ${store.path}`);
+  await maybeCommit(store, opts.commit, opts.commitMessage, opts.cwd, logger);
   return result;
 }
 async function maybeCommit(store, commit, message, cwd, logger) {

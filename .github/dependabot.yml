@@ -1,6 +1,7 @@
-# Weekly dependency updates. A runtime dependency bump changes dist/action.js, so the
-# check-dist workflow fails on those pull requests until the bundle is rebuilt
-# (`npm run build:action`) and committed on the Dependabot branch.
+# Weekly dependency updates. A bump to anything bundled into dist/action.js (the runtime
+# dependencies and the @actions/core dev dependency) changes the bundle, so the check-dist
+# workflow fails on those pull requests until it is rebuilt (`npm run build:action`) and
+# committed on the Dependabot branch.
 version: 2
 updates:
   - package-ecosystem: npm

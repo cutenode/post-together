@@ -1,6 +1,6 @@
 {
   "name": "@cutenode/post-together",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Post Markdown files from a directory to Bluesky, as a GitHub Action, a Tangled Spindle step, or a CLI.",
   "license": "MIT",
   "author": "Tierney Cyren",
@@ -28,7 +28,7 @@
   "files": [
     "dist",
     "!dist/action.js",
-    "action.yml"
+    "!dist/action.d.ts"
   ],
   "publishConfig": {
     "access": "public"
@@ -43,17 +43,17 @@
     "check-dist": "npm run build:action && git diff --exit-code -- dist/action.js"
   },
   "dependencies": {
-    "@actions/core": "^3.0.1",
-    "@atproto/api": "^0.21.0",
-    "@atproto/common-web": "^0.5.12",
-    "mdast-util-from-markdown": "^2.0.3",
+    "@atproto/api": "^0.23.0",
+    "@atproto/common-web": "^0.5.14",
+    "mdast-util-from-markdown": "^2.1.0",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@actions/core": "^3.0.1",
+    "@types/node": "^24.19.1",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.3"
   }
 }

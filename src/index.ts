@@ -5,8 +5,8 @@
  * Nothing here imports `@actions/core`.
  */
 import { bskyAppUrl, login } from './bluesky.js'
-import { describeOptions, UsageError, withDefaults } from './config.js'
-import { discover } from './discover.js'
+import { describeOptions, type ResolvedOptions, UsageError, withDefaults } from './config.js'
+import { discover, keyRoot } from './discover.js'
 import { commitState } from './git.js'
 import { consoleLogger } from './log.js'
 import { parseFile } from './parse.js'
@@ -80,7 +80,12 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
   logger.debug(`options: ${describeOptions(opts)}`)
   const cwd = opts.cwd
 
-  const files = await discover(opts.dir, cwd)
+  // State keys and record keys are relative to the repository root, not to cwd, so running
+  // from a subdirectory cannot give the same file a new key and post it twice.
+  const root = await keyRoot(opts.dir, cwd)
+  if (root !== cwd) logger.debug(`state and record keys are relative to ${root}`)
+
+  const files = await discover(opts.dir, cwd, root)
   if (files.length === 0) logger.warn(`no Markdown files found under ${opts.dir}`)
 
   const candidates: Candidate[] = []
@@ -88,7 +93,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
   const problems: string[] = []
   for (const f of files) {
     try {
-      const parsed = await parseFile(f.path, cwd)
+      const parsed = await parseFile(f.path, cwd, root)
       if (parsed.frontmatter.draft) {
         candidates.push({ relPath: parsed.relPath, hash: parsed.hash, draft: true })
         continue
@@ -110,7 +115,7 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
   const statePath = resolveStatePath(opts.stateFile, cwd)
   const store = await StateStore.open(statePath)
 
-  if (opts.mode === 'init') return init(candidates, rendered, store, opts.commit, opts.commitMessage, cwd, logger)
+  if (opts.mode === 'init') return init(candidates, rendered, store, opts, logger)
 
   const items = plan(candidates, store.state, opts.limit, logger)
   const result: RunResult = { posted: [], resumed: [], skipped: [], rendered }
@@ -145,18 +150,27 @@ export async function run(options: RunOptions = {}): Promise<RunResult> {
   result.did = client.did
   logger.info(`logged in as ${client.did} via ${opts.service}`)
 
-  for (const item of toPost) {
-    const outcome = await publishFile(client, store, item.rendered, { logger })
-    const first = outcome.posts[0]
-    const link = first ? bskyAppUrl(client.did, first.rkey) : '(no posts)'
-    const n = outcome.posts.length
-    const entry = { relPath: item.relPath, posts: outcome.posts }
-    if (outcome.resumed) result.resumed.push(entry)
-    else result.posted.push(entry)
-    logger.info(`${outcome.resumed ? 'resumed' : 'posted'} ${item.relPath} → ${link} (${n} post${n === 1 ? '' : 's'})`)
+  // Commit whatever was recorded even when a later file fails (a 429, say), so the
+  // progress made before the failure is not lost from the repository.
+  try {
+    for (const item of toPost) {
+      const outcome = await publishFile(client, store, item.rendered, { logger })
+      if (outcome.changed) {
+        result.skipped.push({ relPath: item.relPath, reason: 'changed' })
+        logger.info(`skipped ${item.relPath} (${SKIP_REASON_TEXT.changed})`)
+        continue
+      }
+      const first = outcome.posts[0]
+      const link = first ? bskyAppUrl(client.did, first.rkey) : '(no posts)'
+      const n = outcome.posts.length
+      const entry = { relPath: item.relPath, posts: outcome.posts }
+      if (outcome.resumed) result.resumed.push(entry)
+      else result.posted.push(entry)
+      logger.info(`${outcome.resumed ? 'resumed' : 'posted'} ${item.relPath} → ${link} (${n} post${n === 1 ? '' : 's'})`)
+    }
+  } finally {
+    await maybeCommit(store, opts.commit, opts.commitMessage, cwd, logger)
   }
-
-  await maybeCommit(store, opts.commit, opts.commitMessage, cwd, logger)
   return result
 }
 
@@ -164,9 +178,7 @@ async function init(
   candidates: Candidate[],
   rendered: RenderedFile[],
   store: StateStore,
-  commit: boolean,
-  commitMessage: string,
-  cwd: string,
+  opts: ResolvedOptions,
   logger: Logger,
 ): Promise<RunResult> {
   if (store.path === null) throw new UsageError('init needs a state file; state-file is set to none')
@@ -185,12 +197,21 @@ async function init(
       logger.info(`skipped ${c.relPath} (already posted)`)
       continue
     }
-    await store.set(c.relPath, { hash: c.hash, did: '', postedAt: now, posts: [] })
     marked++
+    if (opts.dryRun) {
+      logger.info(`would mark ${c.relPath} as posted`)
+      continue
+    }
+    await store.set(c.relPath, { hash: c.hash, did: '', postedAt: now, posts: [] })
     logger.info(`marked ${c.relPath} as posted`)
   }
-  logger.info(`init: marked ${marked} file${marked === 1 ? '' : 's'} as posted in ${store.path}`)
-  await maybeCommit(store, commit, commitMessage, cwd, logger)
+  const files = `${marked} file${marked === 1 ? '' : 's'}`
+  if (opts.dryRun) {
+    logger.info(`dry run: init would mark ${files} as posted in ${store.path}; nothing was written`)
+    return result
+  }
+  logger.info(`init: marked ${files} as posted in ${store.path}`)
+  await maybeCommit(store, opts.commit, opts.commitMessage, opts.cwd, logger)
   return result
 }
 

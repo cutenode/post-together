@@ -270,6 +270,22 @@ describe('publishFile', () => {
     expect(outcome.posts[0]!.cid).toBe(seeded.cid)
   })
 
+  it('refuses a file whose key already holds a record with different text, creating and recording nothing', async () => {
+    const client = await doLogin()
+    const relPath = 'posts/edited.md'
+    const file = rendered(relPath, [{ text: 'new first' }, { text: 'new second' }])
+    pds.seed(rkeyFor(relPath, 0), { $type: 'app.bsky.feed.post', text: 'old first', createdAt: '2026-01-01T00:00:00.000Z' })
+    const stateFile = path.join(tmp, 'state.json')
+    const store = await StateStore.open(stateFile)
+
+    const outcome = await publishFile(client, store, file, { logger })
+    expect(outcome).toEqual({ posts: [], resumed: false, changed: true })
+    expect(pds.calls('com.atproto.repo.createRecord')).toHaveLength(0)
+    expect(store.changed).toBe(false)
+    expect((await readState(stateFile)).posts[relPath]).toBeUndefined()
+    expect(logs.warn.some((m) => m.includes(relPath) && m.includes('different text'))).toBe(true)
+  })
+
   it('trusts cids already in the state entry without asking the PDS', async () => {
     const client = await doLogin()
     const relPath = 'posts/trusted.md'
@@ -454,6 +470,35 @@ describe('run', () => {
     expect(pds.records.size).toBe(3)
   })
 
+  it('with stateFile none an edited file is skipped as changed instead of extending the old thread', async () => {
+    const dir = await writePosts({ 'a.md': 'Original single post\n' })
+    await run({ ...base(), stateFile: 'none' })
+    expect(pds.records.size).toBe(1)
+
+    await writeFile(path.join(dir, 'a.md'), 'Edited first\n\n---\n\nEdited second\n\n---\n\nEdited third\n')
+    const second = await run({ ...base(), stateFile: 'none' })
+    expect(second.posted).toEqual([])
+    expect(second.resumed).toEqual([])
+    expect(second.skipped).toEqual([{ relPath: 'posts/a.md', reason: 'changed' }])
+    expect(pds.records.size).toBe(1)
+    expect(pds.calls('com.atproto.repo.createRecord')).toHaveLength(1)
+    expect(logs.info).toContain('skipped posts/a.md (changed since it was posted)')
+  })
+
+  it('keys files relative to the repository root, so running from a subdirectory does not repost', async () => {
+    await mkdir(path.join(tmp, '.git'))
+    await writePosts({ 'a.md': 'Hello\n' })
+    const first = await run(base())
+    expect(first.posted.map((p) => p.relPath)).toEqual(['posts/a.md'])
+
+    const inside = await run({ ...base(), cwd: path.join(tmp, 'posts'), dir: '.', stateFile: 'none' })
+    expect(inside.posted).toEqual([])
+    expect(inside.resumed.map((r) => r.relPath)).toEqual(['posts/a.md'])
+    const fromState = await run({ ...base(), cwd: path.join(tmp, 'posts'), dir: '.', stateFile: '.post-together.json' })
+    expect(fromState.skipped).toEqual([{ relPath: 'posts/a.md', reason: 'posted' }])
+    expect(pds.calls('com.atproto.repo.createRecord')).toHaveLength(1)
+  })
+
   it('skips drafts and changed files, and honours the limit', async () => {
     const dir = await writePosts({ 'a.md': 'A\n', 'b.md': 'B\n', 'c.md': 'C\n', 'd.md': '---\ndraft: true\n---\nD\n' })
     const first = await run({ ...base(), limit: 1 })
@@ -488,6 +533,15 @@ describe('run', () => {
     expect((await readState(path.join(tmp, 'posts', '.post-together.json'))).posts['posts/a.md']!.postedAt).toBeDefined()
   })
 
+  it('still tries to commit the state file when a later file fails', async () => {
+    pds.failCreateAt = 2
+    await writePosts({ 'a.md': 'One\n', 'b.md': 'Two\n' })
+    await expect(run({ ...base(), commit: true })).rejects.toBeInstanceOf(BlueskyError)
+    // tmp is not a git work tree, so the attempt ends in this warning; reaching it proves the commit step ran.
+    expect(logs.warn.some((m) => m.includes('commit skipped') && m.includes('not inside a git work tree'))).toBe(true)
+    expect((await readState(path.join(tmp, 'posts', '.post-together.json'))).posts['posts/a.md']!.postedAt).toBeDefined()
+  })
+
   it('fails with the identifier hint on a wrong password, before any write', async () => {
     await writePosts({ 'a.md': 'Hello\n' })
     const err = await run({ ...base(), password: 'nope' }).catch((e: unknown) => e)
@@ -519,6 +573,17 @@ describe('run', () => {
     expect(later.skipped).toContainEqual({ relPath: 'posts/a.md', reason: 'posted' })
     expect(pds.calls('com.atproto.repo.createRecord')).toHaveLength(0)
     await expect(run({ cwd: tmp, dir: 'posts', service: pds.url, logger, mode: 'init', stateFile: 'none' })).rejects.toThrow(UsageError)
+  })
+
+  it('init with dryRun lists the files it would mark and writes nothing', async () => {
+    await writePosts({ 'a.md': 'Hello\n', 'b.md': 'World\n' })
+    const result = await run({ cwd: tmp, dir: 'posts', service: pds.url, logger, mode: 'init', dryRun: true, commit: true })
+    expect(result.skipped).toEqual([])
+    expect(pds.requests).toHaveLength(0)
+    await expect(readFile(path.join(tmp, 'posts', '.post-together.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(logs.info).toContain('would mark posts/a.md as posted')
+    expect(logs.info.some((m) => m.startsWith('dry run: init would mark 2 files'))).toBe(true)
+    expect(logs.warn.concat(logs.info).some((m) => m.includes('commit'))).toBe(false)
   })
 
   it('reports every unrenderable file before touching the network', async () => {

@@ -75,12 +75,13 @@ class RunBuilder {
 
 /**
  * Read and parse one Markdown file: frontmatter, sha256 hash, and segments/blocks/runs.
+ * `filePath` resolves against `cwd`; `relPath` is relative to `root` (default `cwd`; see `keyRoot`).
  * Image paths are resolved against the file's directory and validated (existence, size, extension).
  * Throws an Error whose message names the file (and line where possible) on any contract violation.
  */
-export async function parseFile(filePath: string, cwd: string): Promise<ParsedFile> {
+export async function parseFile(filePath: string, cwd: string, keyRoot: string = cwd): Promise<ParsedFile> {
   const abs = path.resolve(cwd, filePath)
-  const relPath = toPosix(path.relative(cwd, abs))
+  const relPath = toPosix(path.relative(path.resolve(cwd, keyRoot), abs))
 
   let raw: Buffer
   try {

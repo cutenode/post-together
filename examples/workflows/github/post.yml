@@ -1,6 +1,5 @@
-# EXAMPLE consumer workflow. This is the file to copy into your own repository as
-# .github/workflows/post.yml. It is committed here only as documentation: in this
-# repository there is no posts/ directory, so the paths filter never matches.
+# EXAMPLE consumer workflow. Copy this file into your own repository as
+# .github/workflows/post.yml. It lives under examples/ so it never runs here.
 #
 # What it does: on every push to main that touches posts/**, post any Markdown file
 # under posts/ that has not been posted yet, then commit the updated

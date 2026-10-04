@@ -2,6 +2,6 @@
 langs: [en]
 ---
 
-A post with an image. The image line below is removed from the text and uploaded as an embed; its alt text is kept.
+This post has an image. post-together removes the image line below from the text and uploads the image as an embed with its alt text.
 
 ![A 2 by 2 pixel test image: red, green, blue and white](./example.png)

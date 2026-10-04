@@ -25,9 +25,9 @@ Primary sources:
 
 ### Location & naming (VERIFIED)
 - `WorkflowDir = ".tangled/workflows"` (DEF). DOCS: "They're located in the `.tangled/workflows` directory at the root of your repository, and are defined using YAML."
-- **Every regular file in that directory is loaded as a workflow; no extension filter** (SERVER `loadPipeline()`). `.yml` and `.yaml` both work: `tangled.org/core` uses `build.yml`, `tangled.org/site` uses `deploy.yaml`.
-- The workflow's **name is the filename**, shown in the UI and used as the `workflows[]` selector in manual triggers.
-- All workflow files in a pipeline run **in parallel**; steps inside a workflow run **serially**.
+- Every regular file in that directory is loaded as a workflow; there is no extension filter (SERVER `loadPipeline()`). `.yml` and `.yaml` both work: `tangled.org/core` uses `build.yml`, `tangled.org/site` uses `deploy.yaml`.
+- The workflow's name is the filename. It is shown in the UI and used as the `workflows[]` selector in manual triggers.
+- All workflow files in a pipeline run in parallel; steps inside a workflow run serially.
 - Push options: `git push -o skip-ci` skips CI; `git push -o verbose-ci` prints parse errors and "workflow skipped" warnings.
 
 ### Generic top-level keys (VERIFIED from DEF Go struct)
@@ -51,8 +51,8 @@ CloneOpts struct { Skip bool `yaml:"skip"`; Depth int `yaml:"depth"`; IncludeSub
 ```
 - `StringList` accepts a scalar or a list.
 - Trigger kinds: `push`, `pull_request`, `manual`, `schedule`.
-- A workflow with no `when` runs on every event (code), though DOCS call `when` required. `engine` **is** enforced (`MissingEngine` in COMPILE).
-- Push: ref matched against `branch` or `tag` with doublestar globs. PR: `branch` is the **target** branch. `paths`: at least one changed file must match.
+- A workflow with no `when` runs on every event (code), though DOCS call `when` required. COMPILE does enforce `engine` (`MissingEngine`).
+- Push: ref matched against `branch` or `tag` with doublestar globs. PR: `branch` is the target branch. `paths`: at least one changed file must match.
 - Schedule: 5-field cron, optional IANA `timezone` (default UTC), Jenkins-style `H`; min interval 5m.
 
 DOCS trigger examples (verbatim):
@@ -75,7 +75,7 @@ when:
 DOCS say defaults are `skip: false, depth: 1, submodules: false`, but DEF `AsRecord()` compiles omitted `submodules`/`tags` to `true`. Effective default fetch: `git fetch --depth=1 --recurse-submodules=yes --tags origin <sha>`. Set `submodules: false` / `tags: false` explicitly to avoid that.
 
 ### Engine-specific keys (VERIFIED)
-Each engine re-parses the raw YAML with its own struct; **unknown keys are a hard error** (MANIFEST: `unknown field <path> (line N)`).
+Each engine re-parses the raw YAML with its own struct, and unknown keys are a hard error (MANIFEST: `unknown field <path> (line N)`).
 
 nixery:
 ```go
@@ -91,8 +91,8 @@ Dependencies []string `yaml:"dependencies"`   // flat list
 Environment map[string]string; Substituters map[string]string; Cache []CacheEntry
 Steps []struct { Name, Command string; Environment map[string]string } `yaml:"steps"`
 ```
-- **Step fields are exactly `name`, `command`, `environment`.** No `run`, `uses`, `shell`, `if`, `working-directory`, `with`, `id`, or `timeout`.
-- nixery `dependencies` is a **map** (registry → packages) and microvm `dependencies` is a **flat list**, so the two are not interchangeable.
+- Step fields are exactly `name`, `command`, `environment`. There is no `run`, `uses`, `shell`, `if`, `working-directory`, `with`, `id`, or `timeout`.
+- nixery `dependencies` is a map (registry → packages) and microvm `dependencies` is a flat list, so the two are not interchangeable.
 
 ### Complete documented example (DOCS "Complete nixery workflow", verbatim)
 ```yaml
@@ -140,12 +140,12 @@ steps:
 ## 2. Execution environment
 
 ### Engines (VERIFIED)
-`engine` must be `nixery` or `microvm`. The hosted spindle (`spindle.tangled.sh`) offers both; images `nixos`, `alpine`, `almalinux10` (INFRA).
+`engine` must be `nixery` or `microvm`. The hosted spindle (`spindle.tangled.sh`) runs both; images `nixos`, `alpine`, `almalinux10` (INFRA).
 
 ### nixery engine (VERIFIED)
-- Image built on the fly from Nixery: `<nixery>/<nixpkgs deps>/bash/git/coreutils/gnutar/zstd/nix`. **Only the `nixpkgs` registry key contributes to the image**; other registry keys become an injected "Install custom dependencies" step running `nix profile add '<registry>#<pkg>'`.
+- Image built on the fly from Nixery: `<nixery>/<nixpkgs deps>/bash/git/coreutils/gnutar/zstd/nix`. Only the `nixpkgs` registry key contributes to the image; other registry keys become an injected "Install custom dependencies" step running `nix profile add '<registry>#<pkg>'`.
 - Always-present tools: `bash`, `git`, `coreutils`, `gnutar`, `zstd`, `nix`. Nothing else (no `sed`/`grep`/`findutils` unless listed).
-- **One Docker container per workflow**; each step is `docker exec ... bash -c "<command>"`. `WorkingDir: /tangled/workspace`. Steps run as **root**. Memory limit default 6144 MiB. Filesystem state persists across steps.
+- One Docker container per workflow; each step is `docker exec ... bash -c "<command>"`. `WorkingDir: /tangled/workspace`. Steps run as root. Memory limit default 6144 MiB. Filesystem state persists across steps.
 - Base env: `HOME=/tangled/home`, `PATH=/tangled/home/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`. Env order: workflow `environment` → secrets → step `environment` → base env.
 - Network: outbound internet works (real workflows run `npx --yes wrangler`, `curl`). No inbound.
 
@@ -163,7 +163,7 @@ git remote add origin https://<knot>/<repoDid>
 git fetch --depth=<depth|1> [--recurse-submodules=yes] [--tags] origin <sha>
 git checkout FETCH_HEAD
 ```
-Result: **detached HEAD at the trigger SHA**, remote `origin`, no local branch. **No push credentials are configured**; nothing in the environment authenticates to the knot.
+Result: detached HEAD at the trigger SHA, remote `origin`, no local branch. No push credentials are configured, and nothing in the environment authenticates to the knot.
 
 ---
 
@@ -173,10 +173,10 @@ Result: **detached HEAD at the trigger SHA**, remote `origin`, no local branch. 
 - UI: repository **Settings → Pipelines** tab, "Secrets" section (visible once a spindle is selected), "Add secret" modal with `key` and `value`. UI copy: "Secrets are accessible in workflow runs via environment variables. Anyone with collaborator access to this repository can add and use secrets in workflow runs."
 - XRPC: `sh.tangled.repo.addSecret` (input `repo` at-uri, `key` 1 to 50 chars, `value` 1 to 200 chars), `removeSecret`, `listSecrets` (never returns values). Scoped per repository DID.
 - Key rule (SECRETS): `^[a-zA-Z_][a-zA-Z0-9_]*$` ("bash identifier syntax").
-- **No first-party `tangled` CLI.** Third-party Rust CLI `tangled-cli` (https://github.com/overby-me/tangled-cli): `tangled spindle secret add --repo myrepo --key API_KEY --value "secret-value"`, `secret list`, `secret remove`.
+- There is no first-party `tangled` CLI. Third-party Rust CLI `tangled-cli` (https://github.com/overby-me/tangled-cli): `tangled spindle secret add --repo myrepo --key API_KEY --value "secret-value"`, `secret list`, `secret remove`.
 
 ### Exposure to steps (VERIFIED)
-- Injected as plain `KEY=value` env vars into **every user step** on both engines. Not available to injected system steps.
+- Injected as plain `KEY=value` env vars into every user step on both engines. Not available to injected system steps.
 - Log masking: values (and base64 encodings) replaced with `***` in stored logs.
 - Whether secrets are withheld from fork PR pipelines: **UNVERIFIED**.
 - DOCS warn: "**Do not put secrets here [environment], these environment variables are visible to anyone viewing the repository.**"
@@ -202,9 +202,9 @@ No `TANGLED_WORKFLOW_NAME`, no run number, no token for the PDS or knot.
 - BLOG1: "Workflow manifests are intentionally simple. We do not want to include a 'marketplace' of workflows or complex job orchestration. The bulk of the work should be offloaded to a build system, and CI should be used simply for finishing touches."
 - No include/import of other workflow files; no cross-repo templates.
 - Distribution mechanisms for a "reusable step":
-  1. **Nix**: nixery `dependencies: { <flakeref>: [pkg] }`; microvm `dependencies: [github:you/repo#tool]`; `nix run <flakeref>#<attr>` inside a `command`.
-  2. **npm**: `npx --yes <pkg>@<ver> ...` after adding `nodejs` (used by tangled's own `deploy-blog.yml` and `site/deploy.yaml`).
-  3. **curl | sh / download a binary**.
+  1. Nix: nixery `dependencies: { <flakeref>: [pkg] }`; microvm `dependencies: [github:you/repo#tool]`; `nix run <flakeref>#<attr>` inside a `command`.
+  2. npm: `npx --yes <pkg>@<ver> ...` after adding `nodejs` (used by tangled's own `deploy-blog.yml` and `site/deploy.yaml`).
+  3. `curl | sh`, or download a binary.
   Users copy the YAML snippet into their `.tangled/workflows/*.yml`.
 
 ---
@@ -254,7 +254,7 @@ Notes: HOME is writable on both engines so the npx cache works; nixery steps are
 
 ## 7. Limits
 
-- Workflow timeout: config default `5m`; **hosted `spindle.tangled.sh` sets 15m** (INFRA). Applies per workflow (all steps + setup).
+- Workflow timeout: config default `5m`; hosted `spindle.tangled.sh` sets 15m (INFRA). Applies per workflow (all steps + setup).
 - Memory (nixery): default 6144 MiB per container.
 - Concurrency (hosted): `maxJobCount = 8`, `nixery.maxConcurrentWorkflows = 10`, `queueSize = 100`.
 - Pipeline shape: ≤50 workflows per pipeline, workflow name 1 to 40 graphemes.
@@ -409,7 +409,7 @@ steps:
       # Tangled UI renders ANSI colour codes as raw text
       NO_COLOR: "true"
 ```
-The PR instructs to "generate a Netlify access token and set it as a pipeline secret named 'NETLIFY_AUTH_TOKEN'".
+The PR says to "generate a Netlify access token and set it as a pipeline secret named 'NETLIFY_AUTH_TOKEN'".
 
 ### F. `aly.codes/tg` `.tangled/workflows/website.yml` (tag + manual triggers, secret `WISP_APP_PASSWORD`)
 ```yaml

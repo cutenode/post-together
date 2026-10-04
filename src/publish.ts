@@ -1,10 +1,11 @@
 /**
- * Plan and publish. See docs/SPEC.md §7.4–§7.6.
+ * Plan and publish. See docs/SPEC.md §7.4 to §7.6.
  *
- * `plan` decides per file whether to post or skip. `publishFile` reserves the
- * deterministic record keys in the state file, checks the PDS for records that
- * already exist (resume), then creates the missing ones in thread order, writing
- * the state after every successful create.
+ * `plan` decides per file whether to post or skip. `publishFile` checks the PDS
+ * for records that already exist under the deterministic keys (resume), refuses
+ * the file when one of them holds different text, reserves the keys in the state
+ * file, then creates the missing records in thread order, writing the state after
+ * every successful create.
  */
 import { readFile } from 'node:fs/promises'
 import { type Bluesky, type StrongRef, BlueskyError, classifyError, postUri } from './bluesky.js'
@@ -69,6 +70,12 @@ export interface PublishOutcome {
   posts: PostRef[]
   /** True when at least one record already existed on the PDS or in the state file. */
   resumed: boolean
+  /**
+   * True when a record already on the PDS under one of the file's keys has different text
+   * (the file was edited after posting, or another file used this path). Nothing was created
+   * or recorded, and `posts` is empty.
+   */
+  changed: boolean
 }
 
 function clonePosts(posts: PostRef[]): PostRef[] {
@@ -123,16 +130,24 @@ export async function publishFile(
     })
   }
 
-  // 3. Ask the PDS about every post that is not yet confirmed.
+  // 3. Ask the PDS about every post that is not yet confirmed. An existing record only
+  //    counts as this post when its text matches; otherwise the keys belong to an earlier
+  //    version of the file (or another file at the same path), and continuing would hang
+  //    new posts under old ones.
   let found = 0
-  for (const ref of refs) {
+  for (const [i, ref] of refs.entries()) {
     if (ref.cid !== undefined) continue
     const existing = await guard(() => client.getRecord(ref.rkey))
-    if (existing) {
-      ref.cid = existing.cid
-      found++
-      logger.info(`${relPath}: record ${ref.rkey} already exists on the PDS`)
+    if (!existing) continue
+    if (existing.value['text'] !== posts[i]?.text) {
+      logger.warn(
+        `${relPath}: post ${i + 1} already exists on the PDS (${existing.uri}) with different text, so the file changed since it was posted or another file used this path; post-together never edits or reposts (skipping)`,
+      )
+      return { posts: [], resumed: false, changed: true }
     }
+    ref.cid = existing.cid
+    found++
+    logger.info(`${relPath}: record ${ref.rkey} already exists on the PDS`)
   }
 
   const entry = (extra: Partial<StateEntry> = {}): StateEntry => ({
@@ -144,7 +159,7 @@ export async function publishFile(
 
   if (refs.every((r) => r.cid !== undefined)) {
     await store.set(relPath, entry({ postedAt: now().toISOString() }))
-    return { posts: clonePosts(refs), resumed: true }
+    return { posts: clonePosts(refs), resumed: true, changed: false }
   }
 
   // 4. Reserve the keys before the first network write so a crash is resumable.
@@ -183,7 +198,7 @@ export async function publishFile(
   }
 
   await store.set(relPath, entry({ postedAt: now().toISOString() }))
-  return { posts: clonePosts(refs), resumed: carried + found > 0 }
+  return { posts: clonePosts(refs), resumed: carried + found > 0, changed: false }
 }
 
 interface RecordContext {

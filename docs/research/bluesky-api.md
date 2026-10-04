@@ -15,7 +15,7 @@ Research report, verified 2026-09-28. `docs.bsky.app/docs/*` pages now redirect 
 | 0.21.0 changes | Only deprecations (legacy notification priority fields). Nothing affecting posting. | same CHANGELOG |
 | README guidance | "We recommend using [lex]… our type-safe SDK with Lexicon code generation, for all new projects." (`@atproto/lex` 0.3.12, `@atproto/lex-password-session` 0.2.3 *preview*) | https://github.com/bluesky-social/atproto/blob/main/packages/api/README.md |
 
-Practical: use `"type": "module"`; TypeScript `moduleResolution: "node16"`/`"nodenext"`/`"bundler"`.
+In practice: use `"type": "module"` and TypeScript `moduleResolution: "node16"`/`"nodenext"`/`"bundler"`.
 
 ---
 
@@ -25,7 +25,7 @@ Practical: use `"type": "module"`; TypeScript `moduleResolution: "node16"`/`"nod
 - `Agent`: the base agent (takes a `SessionManager`).
 - `CredentialSession`: username/app-password session manager (`login`, `resumeSession`, `refreshSession`, `logout`).
 - `AtpAgent`: `Agent` + `CredentialSession` wrapper. Its JSDoc says "**This class will be deprecated in the near future.** Use `Agent` directly with a `CredentialSession` instead" (not yet tagged `@deprecated`). https://github.com/bluesky-social/atproto/blob/main/packages/api/src/atp-agent.ts
-- `BskyAgent`: **deprecated** (`@deprecated use AtpAgent instead`). https://github.com/bluesky-social/atproto/blob/main/packages/api/src/bsky-agent.ts ; https://docs.bsky.app/blog/ts-api-refactor
+- `BskyAgent`: deprecated (`@deprecated use AtpAgent instead`). https://github.com/bluesky-social/atproto/blob/main/packages/api/src/bsky-agent.ts ; https://docs.bsky.app/blog/ts-api-refactor
 - The package default export is `@deprecated`; use named imports.
 
 The README marks the app-password path as "deprecated in favor of OAuth based session management" (a CAUTION note), but it is fully supported and is the only headless option.
@@ -106,8 +106,8 @@ Sources: https://github.com/bluesky-social/atproto/blob/main/packages/api/src/ri
 
 **API**
 - `new RichText({ text, facets? }, { cleanNewlines?: boolean })`
-- `rt.text` → the JS string; `rt.length` → **UTF-8 byte length**; `rt.graphemeLength` → grapheme clusters; `rt.facets`.
-- `await rt.detectFacets(agent)` **overwrites** `rt.facets` with auto-detected mentions, links, `#tags`, `$CASHTAGS`; resolves each mention via `com.atproto.identity.resolveHandle`; an unresolvable handle gets `did: ''` (drop those). `rt.detectFacetsWithoutResolution()` skips resolution ("Will produce invalid facets").
+- `rt.text` → the JS string; `rt.length` → UTF-8 byte length; `rt.graphemeLength` → grapheme clusters; `rt.facets`.
+- `await rt.detectFacets(agent)` overwrites `rt.facets` with auto-detected mentions, links, `#tags`, `$CASHTAGS`; resolves each mention via `com.atproto.identity.resolveHandle`; an unresolvable handle gets `did: ''` (drop those). `rt.detectFacetsWithoutResolution()` skips resolution ("Will produce invalid facets").
 - Detection details: bare domains with a valid TLD become `https://…` links; trailing `.,;:!?` and unmatched `)` are stripped from URLs; tags drop trailing punctuation and must be ≤ 64 graphemes.
 
 ```ts
@@ -118,7 +118,7 @@ rt.facets = rt.facets?.filter(f => !f.features.some(x => x.$type === 'app.bsky.r
 await agent.post({ text: rt.text, facets: rt.facets })
 ```
 
-**Facet shape** (byte offsets are zero-indexed **UTF-8 bytes**, start inclusive, end exclusive; facets must not overlap):
+**Facet shape** (byte offsets are zero-indexed UTF-8 bytes, start inclusive, end exclusive; facets must not overlap):
 ```ts
 {
   index: { byteStart: 6, byteEnd: 15 },
@@ -158,9 +158,9 @@ export function buildRichText(segs: Seg[]) {
 
 ## 5. Length limits
 
-- **300 graphemes and 3000 UTF-8 bytes** on `text`. The PDS enforces this at `createRecord` → 400 `InvalidRequest`.
+- `text` is limited to 300 graphemes and 3000 UTF-8 bytes. The PDS enforces this at `createRecord` → 400 `InvalidRequest`.
 - `rt.graphemeLength` uses `Intl.Segmenter` when available (Node 22 has it). README example: `'👨‍👩‍👧‍👧'` → `length 25`, `graphemeLength 1`.
-- **URLs count in full**: the limits apply to the raw `text` string. The only way to "save" characters is the §4 pattern (short display text + full URL in the facet).
+- URLs count in full, because the limits apply to the raw `text` string. The only way to "save" characters is the §4 pattern (short display text + full URL in the facet).
 - Hashtag facet `tag`: maxLength 640 / maxGraphemes 64; `tags[]` ≤ 8.
 
 ---
@@ -194,7 +194,7 @@ Lexicons: external https://github.com/bluesky-social/atproto/blob/main/lexicons/
 
 **`uploadBlob` first.** Call `agent.uploadBlob(data, { encoding: '<mime>' })` (input encoding `*/*`; output `{ blob }`). The blob "will be deleted if it is not referenced within a time window (eg, minutes). Blob restrictions (mimetype, size, etc) are enforced when the reference is created", i.e. at `createRecord`. Hard PDS cap: 52,428,800 bytes on Bluesky-hosted PDSs.
 
-**Images** `app.bsky.embed.images`: up to **4** images; each `{ image: blob, alt: string (required), aspectRatio?: { width ≥1, height ≥1 } }`; blob `accept: ["image/*"]`, **`maxSize: 2000000`** ("May be up to 2 MB, formerly limited to 1 MB"). The lexicon is authoritative over the guide's stale 1 MB prose. Leave `aspectRatio` undefined rather than guessing.
+**Images** `app.bsky.embed.images`: up to 4 images; each `{ image: blob, alt: string (required), aspectRatio?: { width ≥1, height ≥1 } }`; blob `accept: ["image/*"]`, `maxSize: 2000000` ("May be up to 2 MB, formerly limited to 1 MB"). The lexicon is authoritative over the guide's stale 1 MB prose. Leave `aspectRatio` undefined rather than guessing.
 ```ts
 import { readFile } from 'node:fs/promises'
 const bytes = await readFile('./screenshot.png')
@@ -208,7 +208,7 @@ await agent.post({
 })
 ```
 
-**External link card** `app.bsky.embed.external`: `{ external: { uri, title, description, thumb?: blob } }`. `title`/`description` are required (may be empty strings); `thumb` has `accept: ["image/*"]`, **`maxSize: 1000000`**. Cards are **baked into the record by the client**: "each client fetches and embeds this card metadata, including blob upload if needed". A bare URL in `text` produces no card.
+**External link card** `app.bsky.embed.external`: `{ external: { uri, title, description, thumb?: blob } }`. `title`/`description` are required (may be empty strings); `thumb` has `accept: ["image/*"]`, `maxSize: 1000000`. The client bakes the card into the record: "each client fetches and embeds this card metadata, including blob upload if needed". A bare URL in `text` produces no card.
 ```ts
 async function externalCard(agent: Agent, url: string, meta: { title?: string; description?: string; image?: string }) {
   let thumb: unknown
@@ -223,9 +223,9 @@ async function externalCard(agent: Agent, url: string, meta: { title?: string; d
 }
 ```
 
-**Link card + images together: not possible.** `embed` is a single union member. `recordWithMedia` combines a **quote post** with *one* media embed. There is no union member for images + external.
+**Link card + images together: not possible.** `embed` is a single union member. `recordWithMedia` combines a quote post with one media embed. There is no union member for images + external.
 
-**OpenGraph metadata.** No endpoint in the atproto/Bluesky lexicons. Options: (1) parse it yourself, as the official guide does with BeautifulSoup reading `og:title`, `og:description`, `og:image`; (2) the official app calls `https://cardyb.bsky.app/v1/extract?url=…` (https://github.com/bluesky-social/social-app/blob/main/src/lib/constants.ts), which is **undocumented/unofficial** for third parties.
+**OpenGraph metadata.** No endpoint in the atproto/Bluesky lexicons. Options: (1) parse it yourself, as the official guide does with BeautifulSoup reading `og:title`, `og:description`, `og:image`; (2) the official app calls `https://cardyb.bsky.app/v1/extract?url=…` (https://github.com/bluesky-social/social-app/blob/main/src/lib/constants.ts), which is undocumented and unofficial for third parties.
 ```ts
 export async function fetchOg(url: string) {
   const html = await (await fetch(url, { headers: { 'user-agent': 'my-ci-bot/1.0' } })).text()
@@ -242,7 +242,7 @@ export async function fetchOg(url: string) {
 ## 8. `langs` and `createdAt`
 
 - `langs`: array of ≤ 3 BCP-47 tags (`format: language`, e.g. `["th", "en-US"]`).
-- `createdAt`: Lexicon `datetime` (RFC 3339 / ISO 8601); uppercase `T`; **timezone required**, `Z` preferred; whole seconds required (https://atproto.com/specs/lexicon). `new Date().toISOString()` is valid. It is "client-declared": far-future values float to the top of feeds and are sorted with `sortAt = min(createdAt, indexedAt)` (https://github.com/bluesky-social/bsky-docs/blob/main/docs/advanced-guides/timestamps.md).
+- `createdAt`: Lexicon `datetime` (RFC 3339 / ISO 8601); uppercase `T`; timezone required, `Z` preferred; whole seconds required (https://atproto.com/specs/lexicon). `new Date().toISOString()` is valid. It is "client-declared": far-future values float to the top of feeds and are sorted with `sortAt = min(createdAt, indexedAt)` (https://github.com/bluesky-social/bsky-docs/blob/main/docs/advanced-guides/timestamps.md).
 
 ---
 
@@ -258,15 +258,15 @@ Doc: https://github.com/bluesky-social/bsky-docs/blob/main/docs/advanced-guides/
 | `uploadBlob` | 1,000 points/day (source only) | **UNVERIFIED** key |
 | Blob upload size | 52,428,800 bytes | — |
 
-Responses carry `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` (unix seconds), `RateLimit-Policy`; on **429** also `Retry-After` (seconds) and body `{ "error": "RateLimitExceeded", "message": … }`. A CI bot posting a few items per run is far below all of these; logging in once per run is fine.
+Responses carry `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` (unix seconds), `RateLimit-Policy`; on 429 also `Retry-After` (seconds) and body `{ "error": "RateLimitExceeded", "message": … }`. A CI bot posting a few items per run is far below all of these; logging in once per run is fine.
 
 ---
 
 ## 10. Idempotency, `rkey`, TIDs
 
-- **No server-side dedupe.** Re-sending the same post creates a second record. The client must track state.
+- The server does not dedupe. Re-sending the same post creates a second record, so the client must track state.
 - Default `rkey` is generated server-side: `TID.next()`.
-- **You may supply `rkey`** (`createRecord.rkey`). For `app.bsky.feed.post` the lexicon declares `"key": "tid"`, and the PDS validates the rkey against the key type, so it **must be a valid TID**: 13 chars of `234567abcdefghijklmnopqrstuvwxyz`, regex `^[234567abcdefghij][234567abcdefghijklmnopqrstuvwxyz]{12}$` (https://atproto.com/specs/tid ; https://atproto.com/specs/record-key).
+- You may supply `rkey` (`createRecord.rkey`). For `app.bsky.feed.post` the lexicon declares `"key": "tid"`, and the PDS validates the rkey against the key type, so it must be a valid TID: 13 chars of `234567abcdefghijklmnopqrstuvwxyz`, regex `^[234567abcdefghij][234567abcdefghijklmnopqrstuvwxyz]{12}$` (https://atproto.com/specs/tid ; https://atproto.com/specs/record-key).
 - Pattern: generate the TID *before* posting, persist it, and on retry check `getRecord` first:
 ```ts
 import { TID } from '@atproto/common-web'

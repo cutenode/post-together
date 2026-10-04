@@ -38,7 +38,7 @@ runs:
   post: 'cleanup.js'
 ```
 
-`node16` is no longer documented (only `node20` and `node24` are listed). The runner's parser still accepts the string (`ActionManifestManager.cs` on `main`: `'using: X' is not supported, use 'docker', 'node12', 'node16', 'node20' or 'node24' instead.`, https://raw.githubusercontent.com/actions/runner/main/src/Runner.Worker/ActionManifestManager.cs) but the Node 16/20 binaries are no longer shipped on GitHub-hosted runners (see §10), so **`node24` is the only value that works on github.com today.**
+`node16` is no longer documented (only `node20` and `node24` are listed). The runner's parser still accepts the string (`ActionManifestManager.cs` on `main`: `'using: X' is not supported, use 'docker', 'node12', 'node16', 'node20' or 'node24' instead.`, https://raw.githubusercontent.com/actions/runner/main/src/Runner.Worker/ActionManifestManager.cs) but the Node 16/20 binaries are no longer shipped on GitHub-hosted runners (see §10), so `node24` is the only value that works on github.com today.
 
 ### `inputs` (verbatim)
 
@@ -51,11 +51,11 @@ runs:
 > "When you specify an input, GitHub creates an environment variable for the input with the name `INPUT_<VARIABLE_NAME>`. The environment variable created converts input names to uppercase letters and replaces spaces with `_` characters."
 > "For example, if a workflow defined the `num-octocats` and `octocat-eye-color` inputs, the action code could read the values of the inputs using the `INPUT_NUM-OCTOCATS` and `INPUT_OCTOCAT-EYE-COLOR` environment variables."
 
-The hyphen is **kept** (only spaces become `_`). The typescript-action template's `.env.example` repeats this: `# GitHub Actions inputs should follow INPUT_<name> format (case-sensitive). Hyphens should not be converted to underscores!` (https://raw.githubusercontent.com/actions/typescript-action/main/.env.example). Composite actions do **not** get `INPUT_*`; they use the `inputs` context.
+The hyphen is kept; only spaces become `_`. The typescript-action template's `.env.example` repeats this: `# GitHub Actions inputs should follow INPUT_<name> format (case-sensitive). Hyphens should not be converted to underscores!` (https://raw.githubusercontent.com/actions/typescript-action/main/.env.example). Composite actions do not get `INPUT_*`; they use the `inputs` context.
 
 ### `outputs`
 - `outputs.<output_id>.description`: Required.
-- `outputs.<output_id>.value`: Required **for composite actions only**.
+- `outputs.<output_id>.value`: Required for composite actions only.
 
 ### `branding` (verbatim)
 - `branding.color`: "Can be one of: `white`, `black`, `yellow`, `blue`, `green`, `orange`, `red`, `purple`, or `gray-dark`."
@@ -174,7 +174,7 @@ Source: https://docs.github.com/en/actions/reference/workflows-and-actions/varia
 | `GITHUB_OUTPUT`, `GITHUB_ENV`, `GITHUB_STEP_SUMMARY`, `GITHUB_STATE`, `GITHUB_PATH` | env-file paths for workflow commands |
 | `RUNNER_OS` | "Possible values are `Linux`, `Windows`, or `macOS`" |
 
-`GITHUB_TOKEN` is **not** an env var by default; pass it explicitly (`env: GITHUB_TOKEN: ${{ github.token }}` or an input).
+`GITHUB_TOKEN` is not an env var by default; pass it explicitly (`env: GITHUB_TOKEN: ${{ github.token }}` or an input).
 
 ---
 
@@ -188,7 +188,7 @@ Source: https://docs.github.com/en/actions/tutorials/create-actions/create-a-jav
 
 The tutorial (Prerequisite: "Download and install Node.js 24.x") now installs `rollup @rollup/plugin-commonjs @rollup/plugin-node-resolve`, runs `rollup --config rollup.config.js`, and commits `dist/index.js`.
 
-### Which bundler the official templates use (2026): **Rollup**, ESM output
+### Which bundler the official templates use (2026): Rollup, ESM output
 - `actions/typescript-action` `rollup.config.ts` (verbatim):
   ```ts
   import commonjs from '@rollup/plugin-commonjs'
@@ -212,7 +212,7 @@ The tutorial (Prerequisite: "Download and install Node.js 24.x") now installs `r
 - `main` can point at an ESM file. The runner spawns the bundled Node binary with the script path as its only argument (`NodeScriptActionHandler.cs`, https://raw.githubusercontent.com/actions/runner/main/src/Runner.Worker/Handlers/NodeScriptActionHandler.cs), so Node's normal rules decide the module type: `.mjs` → ESM, `.js` → ESM if nearest `package.json` has `"type": "module"`. The template relies on this; `cloudflare/wrangler-action` uses `using: "node24"` + `main: "dist/index.mjs"`. Since the whole repo is downloaded at the ref, `package.json` is present next to `dist/`.
 - Top-level `await` is fine in ESM. Default `--unhandled-rejections=throw` → exit code 1 = failed step; exit code 13 = "Unsettled Top-Level Await". Prefer an explicit `run().catch(...)` for a readable `::error::` annotation.
 - No `require`, `__dirname`, `__filename` in ESM; use `import.meta.dirname` / `createRequire(import.meta.url)`.
-- `@actions/core` **3.0.0 is ESM-only** ("Package is now ESM-only", https://github.com/actions/toolkit/blob/main/packages/core/RELEASES.md). Current: `@actions/core` 3.0.1 and `@actions/github` 9.1.1.
+- `@actions/core` 3.0.0 is ESM-only ("Package is now ESM-only", https://github.com/actions/toolkit/blob/main/packages/core/RELEASES.md). Current: `@actions/core` 3.0.1 and `@actions/github` 9.1.1.
 
 ### "Check dist" CI pattern (verbatim, https://raw.githubusercontent.com/actions/typescript-action/main/.github/workflows/check-dist.yml)
 
@@ -288,7 +288,7 @@ Keep bundler settings deterministic and pin the bundler in `package-lock.json`, 
 
 ## 5. Versioning and release
 
-- https://docs.github.com/en/actions/how-tos/create-and-publish-actions/managing-custom-actions: "We recommend using tags for actions release management." Create `v1.0.1`, move `v1` to the current release, introduce `v2` for breaking changes. SHAs must be the **full** 40-char SHA.
+- https://docs.github.com/en/actions/how-tos/create-and-publish-actions/managing-custom-actions: "We recommend using tags for actions release management." Create `v1.0.1`, move `v1` to the current release, introduce `v2` for breaking changes. SHAs must be the full 40-char SHA.
 - https://docs.github.com/en/actions/how-tos/create-and-publish-actions/release-and-maintain-actions: keep major (`v1`) and minor (`v1.1`) tags current.
 - Toolkit `docs/action-versioning.md`: "Binding to a major version is the latest of that major version (e.g. v1 == '1.*')"; commands:
   ```
@@ -383,7 +383,7 @@ package.json           # "type":"module", "bin": {...:"./dist/cli.js"}, "files":
 - `persist-credentials`: default `true`; leave it on for the job that pushes.
 - `fetch-depth`: default `1`. Pushing from a shallow clone is allowed; `fetch-depth: 0` only if you rebase/merge/`git describe`.
 - Detached HEAD on `pull_request`: the default PR checkout is `refs/pull/N/merge`, so `git push` has nowhere to go. Do the state commit on `push:` events to `main`.
-- `GITHUB_TOKEN` pushes do not trigger workflows, which acts as a built-in recursion guard. https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow: "events triggered by the `GITHUB_TOKEN` will not create a new workflow run" (except `workflow_dispatch`/`repository_dispatch`).
+- `GITHUB_TOKEN` pushes do not trigger workflows, which is a built-in recursion guard. https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow: "events triggered by the `GITHUB_TOKEN` will not create a new workflow run" (except `workflow_dispatch`/`repository_dispatch`).
 - `[skip ci]` (https://docs.github.com/en/actions/how-tos/manage-workflow-runs/skip-workflow-runs): `[skip ci]`, `[ci skip]`, `[no ci]`, `[skip actions]`, `[actions skip]`, or `skip-checks: true` trailer. Only for `push` and `pull_request` events. Needed only with a PAT/App token.
 - Recommended extras: `concurrency:` group, `git pull --rebase` before push, commit only when `git diff --quiet -- state.json` is false.
 
@@ -401,7 +401,7 @@ package.json           # "type":"module", "bin": {...:"./dist/cli.js"}, "files":
 ## 10. Node on `ubuntu-latest` and what `node24` requires
 
 - `ubuntu-latest` → `ubuntu-24.04`. Image `20260920.314.1`: default Node.js 22.23.2; tool-cache 22.23.2 and 24.21.0. This is the Node for `run:` steps. JavaScript *actions* use the runner's bundled Node from `externals/<nodeXX>/bin/node`.
-- Timeline: runner v2.327.1 added Node 24 support. Node 20 EOL April 2026; from 2026-06-16 runners used Node 24 by default. **2026-09-23** (https://github.blog/changelog/2026-09-23-node-20-is-no-longer-available-in-github-actions/): "Node 20 is no longer available on GitHub Actions runners. Runners now use Node 24 for JavaScript actions." Maintainers must "update its `runs.using` value to `node24`". Actions still declaring `node20` are executed under Node 24 (runner `NodeUtil.DetermineActionsNodeVersion` "Phase 3: Always use Node 24").
+- Timeline: runner v2.327.1 added Node 24 support. Node 20 EOL April 2026; from 2026-06-16 runners used Node 24 by default. The 2026-09-23 changelog (https://github.blog/changelog/2026-09-23-node-20-is-no-longer-available-in-github-actions/): "Node 20 is no longer available on GitHub Actions runners. Runners now use Node 24 for JavaScript actions." Maintainers must "update its `runs.using` value to `node24`". Actions still declaring `node20` are executed under Node 24 (runner `NodeUtil.DetermineActionsNodeVersion` "Phase 3: Always use Node 24").
 - Node 24 requirements: self-hosted runner ≥ v2.327.1; incompatible with macOS 13.4 and earlier; no ARM32.
 - Template pins: `.node-version` 24.4.0, `engines.node >=24.0.0`, `@actions/core ^3.0.0`, `actions/checkout@v6`, `actions/setup-node@v6`, `actions/upload-artifact@v7`.
 

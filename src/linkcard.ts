@@ -4,12 +4,15 @@
  * GET the page with a 10 s timeout, parse `og:title`, `og:description`,
  * `og:image` and `<title>` with attribute-order-tolerant regexes, resolve the
  * image against the page URL and fetch it only if it is an image of at most
- * 1,000,000 bytes. Any failure throws; the publisher posts without a card.
+ * 1,000,000 bytes. Bodies are read with a byte cap, so a huge page or image
+ * cannot exhaust memory. Any failure throws; the publisher posts without a card.
  */
 import { THUMB_MAX_BYTES } from './types.js'
 
 export const LINK_CARD_TIMEOUT_MS = 10_000
 export const USER_AGENT = 'post-together'
+/** Only this much of a page is read; OpenGraph tags live in the `<head>`. */
+export const HTML_MAX_BYTES = 512_000
 
 export interface LinkCardThumb {
   bytes: Uint8Array
@@ -61,7 +64,7 @@ function attr(tag: string, name: string): string | undefined {
 /** Extract `og:*` properties (attribute order does not matter) and `<title>`. */
 export function parseOpenGraph(html: string): { title?: string; description?: string; image?: string } {
   const out: { title?: string; description?: string; image?: string } = {}
-  const head = html.length > 512_000 ? html.slice(0, 512_000) : html
+  const head = html.length > HTML_MAX_BYTES ? html.slice(0, HTML_MAX_BYTES) : html
   for (const [tag] of head.matchAll(/<meta\b[^>]*>/gi)) {
     const key = (attr(tag, 'property') ?? attr(tag, 'name'))?.trim().toLowerCase()
     if (!key || !key.startsWith('og:')) continue
@@ -100,8 +103,8 @@ export async function fetchLinkCard(url: string, opts: LinkCardOptions = {}): Pr
   if (contentType && !/^(text\/html|application\/xhtml\+xml)\b/i.test(contentType)) {
     throw new Error(`GET ${url} returned ${contentType}, not HTML`)
   }
-  const html = await res.text()
-  const og = parseOpenGraph(html)
+  const { bytes } = await readCapped(res, HTML_MAX_BYTES)
+  const og = parseOpenGraph(new TextDecoder().decode(bytes))
   const meta: LinkCardMeta = { uri: url, title: og.title ?? '', description: og.description ?? '' }
 
   if (og.image !== undefined) {
@@ -140,7 +143,44 @@ async function fetchThumb(
     await res.body?.cancel().catch(() => {})
     return undefined
   }
-  const bytes = new Uint8Array(await res.arrayBuffer())
-  if (bytes.byteLength === 0 || bytes.byteLength > THUMB_MAX_BYTES) return undefined
+  const { bytes, truncated } = await readCapped(res, THUMB_MAX_BYTES)
+  if (truncated || bytes.byteLength === 0) return undefined
   return { bytes, mime }
+}
+
+/**
+ * Read at most `max` bytes of a response body, then cancel the rest of the stream.
+ * `truncated` is true when the body was longer than `max`.
+ */
+export async function readCapped(res: Response, max: number): Promise<{ bytes: Uint8Array; truncated: boolean }> {
+  if (!res.body) return { bytes: new Uint8Array(0), truncated: false }
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  let truncated = false
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const room = max - size
+      if (value.byteLength > room) {
+        chunks.push(value.subarray(0, room))
+        size = max
+        truncated = true
+        break
+      }
+      chunks.push(value)
+      size += value.byteLength
+    }
+  } finally {
+    if (truncated) await reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return { bytes, truncated }
 }

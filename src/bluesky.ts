@@ -15,6 +15,11 @@ export interface StrongRef {
   cid: string
 }
 
+/** A record read back from the PDS: its strong ref plus the record value. */
+export interface ExistingRecord extends StrongRef {
+  value: Record<string, unknown>
+}
+
 export type BlueskyErrorKind = 'rate-limited' | 'auth' | 'invalid-request' | 'network'
 
 export class BlueskyError extends Error {
@@ -47,7 +52,7 @@ export interface Bluesky {
   resolveHandle(handle: string): Promise<string | undefined>
   uploadBlob(bytes: Uint8Array, mime: string): Promise<BlobRef>
   /** `undefined` when the PDS answers `RecordNotFound`. */
-  getRecord(rkey: string): Promise<StrongRef | undefined>
+  getRecord(rkey: string): Promise<ExistingRecord | undefined>
   createRecord(rkey: string, record: Record<string, unknown>): Promise<StrongRef>
 }
 
@@ -153,7 +158,7 @@ export async function login(opts: LoginOptions): Promise<Bluesky> {
       try {
         const res = await agent.com.atproto.repo.getRecord({ repo: did, collection: POST_COLLECTION, rkey })
         if (!res.data.cid) throw new Error(`getRecord for ${rkey} returned no cid`)
-        return { uri: res.data.uri, cid: res.data.cid }
+        return { uri: res.data.uri, cid: res.data.cid, value: res.data.value as Record<string, unknown> }
       } catch (err) {
         if (isXRPCError(err) && err.error === 'RecordNotFound') return undefined
         throw err

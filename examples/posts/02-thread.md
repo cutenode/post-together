@@ -3,7 +3,7 @@ thread: manual
 langs: [en]
 ---
 
-A thread, written as one Markdown file. Each `---` on its own line starts the next post, and every post replies to the one before it.
+This whole thread is one Markdown file. Each `---` on its own line starts the next post, and every post replies to the one before it.
 
 ---
 

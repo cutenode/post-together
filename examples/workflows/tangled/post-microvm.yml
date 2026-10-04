@@ -1,7 +1,8 @@
 # Tangled Spindle workflow (microvm engine): the same job as post.yml, run in a
 # NixOS microVM instead of a nixery container. Copy whichever engine you prefer
 # into your repository's .tangled/workflows/ directory; keep only one of the two,
-# otherwise both run in parallel on every push.
+# otherwise both run in parallel on every push. Both live under examples/ so they
+# never run in this repository.
 #
 # Secrets: add BSKY_IDENTIFIER and BSKY_APP_PASSWORD under the repository's
 # Settings -> Pipelines -> Secrets. They are injected into every step as

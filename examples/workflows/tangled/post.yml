@@ -1,7 +1,8 @@
 # Tangled Spindle workflow (nixery engine): post Markdown files from ./posts to
 # Bluesky on every push to main, and when triggered manually from the Tangled UI.
 # Copy this file into your repository as .tangled/workflows/post.yml. The microvm
-# variant is in post-microvm.yml next to this file.
+# variant is in post-microvm.yml next to this file. Both live under examples/ so
+# they never run in this repository.
 #
 # Secrets: Spindle has no `uses:`; a step is a shell command with secrets injected
 # as environment variables. Add these two under the repository's
