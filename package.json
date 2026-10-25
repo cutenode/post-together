@@ -43,7 +43,7 @@
     "check-dist": "npm run build:action && git diff --exit-code -- dist/action.js"
   },
   "dependencies": {
-    "@atproto/api": "^0.23.0",
+    "@atproto/api": "^0.29.1",
     "@atproto/common-web": "^0.5.14",
     "mdast-util-from-markdown": "^2.1.0",
     "yaml": "^2.9.1"
